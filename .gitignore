@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Streamlit secrets (NEVER commit)
+.streamlit/secrets.toml
+
+# Environment variables
+.env
+.env.local
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Uploaded files (local dev only)
+uploads/
+
+# Claude Code local settings
+.claude/
