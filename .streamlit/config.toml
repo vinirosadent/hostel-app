@@ -1,13 +1,23 @@
 [theme]
 base = "light"
-primaryColor = "#3b82f6"
+primaryColor = "#2563eb"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f8fafc"
 textColor = "#111827"
+linkColor = "#2563eb"
+codeBackgroundColor = "#f3f4f6"
 font = "sans serif"
+baseRadius = "medium"
+borderColor = "#e5e7eb"
+showWidgetBorder = true
+
+[theme.sidebar]
+backgroundColor = "#f8fafc"
+secondaryBackgroundColor = "#ffffff"
 
 [server]
 headless = true
+runOnSave = true
 
 [browser]
 gatherUsageStats = false
