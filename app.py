@@ -101,28 +101,30 @@ visible = [m for m in MODULES if _can(m["roles"])]
 if not visible:
     st.info("No modules available. Ask the Hall Master to assign you to a fundraiser.")
 else:
-    n = len(visible)
-    n_cols = min(n, 3)
-    for row_start in range(0, n, n_cols):
+    n_cols = 2
+    for row_start in range(0, len(visible), n_cols):
         row = visible[row_start:row_start + n_cols]
         cols = st.columns(n_cols)
         for col, mod in zip(cols, row):
             with col:
-                with st.container(border=True):
-                    badge = "" if mod["available"] else " <span style='font-size:0.65rem;color:#94a3b8;background:#f1f5f9;padding:1px 6px;border-radius:10px;vertical-align:middle;'>soon</span>"
-                    st.markdown(
-                        f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem;'>"
-                        f"<span style='font-size:1.4rem;'>{mod['icon']}</span>"
-                        f"<span style='font-weight:600;color:#0f172a;font-size:1rem;'>{mod['title']}</span>"
-                        f"{badge}</div>"
-                        f"<p style='color:#64748b;font-size:0.88rem;margin:0;'>{mod['desc']}</p>",
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
-                    if mod["available"] and mod["page"]:
-                        if st.button(f"Open {mod['title']}", key=f"mod_{mod['title']}",
-                                     use_container_width=True, type="primary"):
-                            st.switch_page(mod["page"])
-                    else:
-                        st.button("Coming soon", key=f"mod_{mod['title']}",
-                                  use_container_width=True, disabled=True)
+                badge = ("<span class='sh-home-card-badge-soon'>soon</span>"
+                         if not mod["available"] else "")
+                st.markdown(
+                    f'<div class="sh-home-card">'
+                    f'<div class="sh-home-card-header">'
+                    f'<span class="sh-home-card-icon">{mod["icon"]}</span>'
+                    f'<span class="sh-home-card-title">{mod["title"]}</span>'
+                    f'{badge}'
+                    f'</div>'
+                    f'<p class="sh-home-card-desc">{mod["desc"]}</p>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+                if mod["available"] and mod["page"]:
+                    if st.button(
+                        f"Open {mod['title']}",
+                        key=f"mod_{mod['title']}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
+                        st.switch_page(mod["page"])

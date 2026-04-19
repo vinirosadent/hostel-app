@@ -66,70 +66,86 @@ can_create = has_any_role(["student", "resident_fellow", "rlt_lead",
 # ---------- Create new (top-right button for allowed roles) ----------
 
 if can_create:
-    with st.expander("➕ Create a new fundraiser", expanded=False):
-        with st.form("sh_create_fr_form", clear_on_submit=True):
-            name = st.text_input("Fundraiser name *",
-                                 placeholder="e.g. Christmas Chocolate Drive")
-            objective = st.text_area(
-                "Objective (short description, can edit later)",
-                height=80,
-            )
+    if "sh_create_open" not in st.session_state:
+        st.session_state["sh_create_open"] = False
 
-            # RF selector — load list of resident_fellow users
-            sb = get_supabase()
-            rf_users = sb.table("users").select(
-                "id, full_name, username, assigned_block"
-            ).eq("user_category", "management").execute().data or []
-            # Filter to users who have resident_fellow role
-            ur = sb.table("user_roles").select(
-                "user_id, roles(code)"
-            ).execute().data or []
-            rf_ids = {r["user_id"] for r in ur
-                      if r.get("roles", {}).get("code") == "resident_fellow"}
-            rf_users = [u for u in rf_users if u["id"] in rf_ids]
+    col_btn, _ = st.columns([1, 3])
+    with col_btn:
+        if st.button(
+            "✕ Cancel" if st.session_state["sh_create_open"]
+            else "➕ Create a new fundraiser",
+            key="sh_toggle_create",
+            use_container_width=True,
+        ):
+            st.session_state["sh_create_open"] = not st.session_state["sh_create_open"]
+            st.rerun()
 
-            if not rf_users:
-                st.error("No Resident Fellows in the system yet. "
-                         "Ask Master to create them first.")
-                rf_in_charge_id = None
-            else:
-                rf_label_to_id = {
-                    f"{u['full_name']} (Block {u.get('assigned_block') or '?'})": u["id"]
-                    for u in rf_users
-                }
-                selected_rf_label = st.selectbox(
-                    "RF in charge *",
-                    list(rf_label_to_id.keys()),
+    if st.session_state["sh_create_open"]:
+        with st.container(border=True):
+            with st.form("sh_create_fr_form", clear_on_submit=True):
+                name = st.text_input("Fundraiser name *",
+                                     placeholder="e.g. Christmas Chocolate Drive")
+                objective = st.text_area(
+                    "Objective (short description, can edit later)",
+                    height=80,
                 )
-                rf_in_charge_id = rf_label_to_id[selected_rf_label]
 
-            submitted = st.form_submit_button("Create draft", type="primary")
+                # RF selector — load list of resident_fellow users
+                sb = get_supabase()
+                rf_users = sb.table("users").select(
+                    "id, full_name, username, assigned_block"
+                ).eq("user_category", "management").execute().data or []
+                # Filter to users who have resident_fellow role
+                ur = sb.table("user_roles").select(
+                    "user_id, roles(code)"
+                ).execute().data or []
+                rf_ids = {r["user_id"] for r in ur
+                          if r.get("roles", {}).get("code") == "resident_fellow"}
+                rf_users = [u for u in rf_users if u["id"] in rf_ids]
 
-        if submitted:
-            if not name.strip():
-                st.error("Name is required.")
-            elif not rf_in_charge_id:
-                st.error("RF in charge is required.")
-            else:
-                try:
-                    new_fr = create_fundraiser(
-                        name=name.strip(),
-                        objective=objective.strip() or None,
-                        created_by_id=user["id"],
-                        rf_in_charge_id=rf_in_charge_id,
+                if not rf_users:
+                    st.error("No Resident Fellows in the system yet. "
+                             "Ask Master to create them first.")
+                    rf_in_charge_id = None
+                else:
+                    rf_label_to_id = {
+                        f"{u['full_name']} (Block {u.get('assigned_block') or '?'})": u["id"]
+                        for u in rf_users
+                    }
+                    selected_rf_label = st.selectbox(
+                        "RF in charge *",
+                        list(rf_label_to_id.keys()),
                     )
-                    # Register the creator as a student participant (so they keep access)
-                    sb.table("fundraiser_students").upsert({
-                        "fundraiser_id": new_fr["id"],
-                        "user_id": user["id"],
-                        "position": "chair",
-                        "added_by": user["id"],
-                    }, on_conflict="fundraiser_id,user_id").execute()
-                    st.success(f"Draft created: {new_fr['name']}")
-                    st.session_state["sh_selected_fundraiser"] = new_fr["id"]
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Could not create: {e}")
+                    rf_in_charge_id = rf_label_to_id[selected_rf_label]
+
+                submitted = st.form_submit_button("Create draft", type="primary")
+
+            if submitted:
+                if not name.strip():
+                    st.error("Name is required.")
+                elif not rf_in_charge_id:
+                    st.error("RF in charge is required.")
+                else:
+                    try:
+                        new_fr = create_fundraiser(
+                            name=name.strip(),
+                            objective=objective.strip() or None,
+                            created_by_id=user["id"],
+                            rf_in_charge_id=rf_in_charge_id,
+                        )
+                        # Register the creator as a student participant (so they keep access)
+                        sb.table("fundraiser_students").upsert({
+                            "fundraiser_id": new_fr["id"],
+                            "user_id": user["id"],
+                            "position": "chair",
+                            "added_by": user["id"],
+                        }, on_conflict="fundraiser_id,user_id").execute()
+                        st.success(f"Draft created: {new_fr['name']}")
+                        st.session_state["sh_selected_fundraiser"] = new_fr["id"]
+                        st.session_state["sh_create_open"] = False
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Could not create: {e}")
 
 st.divider()
 
@@ -137,28 +153,48 @@ st.divider()
 # ---------- Render buckets ----------
 
 def _render_card(fr: dict):
-    """Single fundraiser line."""
-    col1, col2, col3 = st.columns([4, 2, 2])
-    with col1:
-        st.markdown(f"**{fr['name']}**")
-        if fr.get("objective"):
-            st.caption(fr["objective"][:120])
-    with col2:
-        st.markdown(status_badge(fr["status"]), unsafe_allow_html=True)
-    with col3:
-        if st.button("Open", key=f"open_{fr['id']}", use_container_width=True):
-            st.session_state["sh_selected_fundraiser"] = fr["id"]
-            st.switch_page("pages/11_Fundraiser_Detail.py")
+    """Compact fundraiser card — name + badge + truncated desc + Open button."""
+    with st.container(border=True):
+        cols = st.columns([4, 1])
+        with cols[0]:
+            st.markdown(
+                f"<div style='font-weight:600;color:#0f172a;"
+                f"font-size:0.95rem;margin-bottom:0.15rem;'>"
+                f"{fr['name']}</div>",
+                unsafe_allow_html=True,
+            )
+            objective = (fr.get("objective") or "").strip()
+            if objective:
+                preview = objective[:85] + ("…" if len(objective) > 85 else "")
+                st.markdown(
+                    f"<div style='color:#64748b;font-size:0.8rem;"
+                    f"line-height:1.35;margin-bottom:0.4rem;'>{preview}</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown(status_badge(fr["status"]), unsafe_allow_html=True)
+        with cols[1]:
+            st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+            if st.button("Open", key=f"open_{fr['id']}", use_container_width=True):
+                st.session_state["sh_selected_fundraiser"] = fr["id"]
+                st.switch_page("pages/11_Fundraiser_Detail.py")
 
 
 def _render_bucket(title: str, frs: list[dict], empty_text: str):
-    st.subheader(f"{title} ({len(frs)})")
+    st.markdown(
+        f"<div style='font-weight:600;font-size:0.95rem;color:#0f172a;"
+        f"margin:0.8rem 0 0.5rem 0;'>{title} "
+        f"<span style='color:#94a3b8;font-weight:500;'>({len(frs)})</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
     if not frs:
         st.caption(empty_text)
         return
-    for fr in frs:
-        with st.container(border=True):
-            _render_card(fr)
+    for i in range(0, len(frs), 2):
+        cols = st.columns(2)
+        for col, fr in zip(cols, frs[i:i + 2]):
+            with col:
+                _render_card(fr)
 
 
 _render_bucket("🟠 Drafts", buckets["drafts"],

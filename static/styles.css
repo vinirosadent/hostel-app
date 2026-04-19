@@ -548,3 +548,106 @@ div[data-testid="stAlert"] {
     white-space: nowrap;
     font-weight: 500;
 }
+
+/* ── Corporate Table (sh-ctable-*) ─────────────────────────────────────── */
+/* Header cells */
+.sh-ctable-th {
+    background: #f8fafc;
+    font-weight: 600;
+    font-size: 0.82rem;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 7px 14px;
+    border-top: 1px solid #e2e8f0;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* Data cells */
+.sh-ctable-td {
+    font-size: 0.92rem;
+    padding: 10px 14px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid #f1f5f9;
+    word-break: break-word;
+}
+/* Alignment modifiers */
+.sh-ctable-right,
+.sh-ctable-th.sh-ctable-right {
+    text-align: right;
+    justify-content: flex-end;
+    font-variant-numeric: tabular-nums;
+}
+.sh-ctable-center,
+.sh-ctable-th.sh-ctable-center {
+    text-align: center;
+    justify-content: center;
+}
+/* Mono (product codes) */
+.sh-ctable-mono {
+    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+/* Separator between header and rows */
+.sh-ctable-sep {
+    height: 0;
+    margin: 0;
+    padding: 0;
+}
+/* Empty state inside table */
+.sh-ctable-empty-row {
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.92rem;
+    padding: 1.5rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+    font-style: italic;
+}
+/* Profit colour helpers */
+.sh-profit-ok  { color: #10b981; font-weight: 600; }
+.sh-profit-bad { color: #dc2626; font-weight: 600; }
+
+/* Home compact module cards */
+.sh-home-card {
+    padding: 0.9rem 1.1rem;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    min-height: 110px;
+}
+.sh-home-card:hover {
+    border-color: #cbd5e1;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04);
+}
+.sh-home-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+.sh-home-card-icon { font-size: 1.2rem; }
+.sh-home-card-title {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 0.95rem;
+}
+.sh-home-card-desc {
+    color: #64748b;
+    font-size: 0.82rem;
+    margin: 0;
+    line-height: 1.4;
+}
+.sh-home-card-badge-soon {
+    font-size: 0.62rem;
+    color: #94a3b8;
+    background: #f1f5f9;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: auto;
+}
