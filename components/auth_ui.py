@@ -42,7 +42,7 @@ def render_login_screen() -> None:
 
 
 def render_sidebar_user() -> None:
-    """Sidebar header showing logged-in user + logout button."""
+    """Sidebar header showing logged-in user + custom navigation + logout."""
     u = current_user()
     if not u:
         return
@@ -57,14 +57,40 @@ def render_sidebar_user() -> None:
         "student_ad_hoc": "Student (Ad-hoc)",
     }
     role_codes = u.get("roles") or []
-    role_display = ", ".join(role_labels.get(r, r) for r in role_codes) or "No role"
+    role_display = " · ".join(role_labels.get(r, r) for r in role_codes) or "No role"
 
     with st.sidebar:
-        st.markdown(f"**{u['full_name']}**")
-        st.caption(f"{role_display}")
-        if u.get("assigned_block"):
-            st.caption(f"Block {u['assigned_block']}")
-        if st.button("Sign out", use_container_width=True, key="sh_logout_btn"):
+        # User info block
+        st.markdown(
+            f"<div style='padding:0.5rem 0;'>"
+            f"<div style='font-weight:600;color:#0f172a;font-size:0.95rem;'>{u['full_name']}</div>"
+            f"<div style='color:#64748b;font-size:0.8rem;'>{role_display}</div>"
+            + (f"<div style='color:#94a3b8;font-size:0.78rem;'>Block {u['assigned_block']}</div>" if u.get("assigned_block") else "")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Navigation links
+        st.markdown("---")
+        st.markdown(
+            "<div style='font-size:0.75rem;font-weight:600;color:#94a3b8;"
+            "text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.4rem;'>"
+            "Navigation</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("🏠  Home", use_container_width=True, key="nav_home"):
+            st.switch_page("app.py")
+        if st.button("💰  Fundraisers", use_container_width=True, key="nav_fundraisers"):
+            st.switch_page("pages/10_Fundraisers.py")
+
+        from services.auth_service import has_any_role
+        if has_any_role(["master"]):
+            if st.button("⚙️  Admin", use_container_width=True, key="nav_admin"):
+                st.switch_page("pages/90_Admin.py")
+
+        st.markdown("---")
+        if st.button("🔒  Change Password", use_container_width=True, key="nav_pw"):
+            st.switch_page("pages/99_Change_Password.py")
+        if st.button("↩  Sign out", use_container_width=True, key="sh_logout_btn"):
             logout()
             st.rerun()
-        st.divider()

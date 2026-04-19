@@ -31,13 +31,17 @@ render_sidebar_user()
 
 def _bucket(status: str) -> str:
     return {
-        "draft":      "drafts",
-        "rf_review":  "under_review",
-        "approved":   "approved",
-        "executing":  "executing",
-        "reporting":  "reporting",
-        "closed":     "closed",
-        "rejected":   "drafts",   # rejected goes back with drafts for editing
+        "draft":               "drafts",
+        "rejected":            "drafts",
+        "rf_review":           "under_review",
+        "master_review":       "under_review",
+        "approved":            "approved",
+        "executing":           "executing",
+        "reporting":           "reporting",
+        "dof_confirming":      "reporting",
+        "finance_confirming":  "reporting",
+        "master_confirming":   "reporting",
+        "closed":              "closed",
     }.get(status, "drafts")
 
 
@@ -161,17 +165,17 @@ _render_bucket("🟠 Drafts", buckets["drafts"],
                "No drafts. Create one using the button above." if can_create
                else "No drafts. Your team lead can create one.")
 
-_render_bucket("🔵 Under review", buckets["under_review"],
-               "Nothing pending review.")
+_render_bucket("🔵 Under Review / Awaiting Approval", buckets["under_review"],
+               "Nothing pending review or approval.")
 
 _render_bucket("🟢 Approved (ready to execute)", buckets["approved"],
                "No fundraisers awaiting execution.")
 
-_render_bucket("🟡 In execution", buckets["executing"],
+_render_bucket("🟡 In Execution", buckets["executing"],
                "No fundraisers currently running.")
 
-_render_bucket("📊 Reporting (pending close)", buckets["reporting"],
-               "No fundraisers in the reporting phase.")
+_render_bucket("📊 Reporting & Closure", buckets["reporting"],
+               "No fundraisers in the reporting or closure phase.")
 
-_render_bucket("✅ Closed", buckets["closed"],
+_render_bucket("✅ Funds Available / Closed", buckets["closed"],
                "No closed fundraisers yet.")

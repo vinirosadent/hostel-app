@@ -1,66 +1,128 @@
 """
 Sheares Hall Ops — entry point.
-
-Shows the login screen when the user is not authenticated, and a simple
-home/dashboard once logged in. Module pages live in pages/.
 """
 import streamlit as st
 
-from services.auth_service import current_user, is_authenticated
-from components.ui import inject_theme, brand_stripe, kpi
+from services.auth_service import (
+    current_user, is_authenticated, has_any_role,
+)
+from components.ui import inject_theme
 from components.auth_ui import render_login_screen, render_sidebar_user
 
 st.set_page_config(
     page_title="Sheares Hall Ops",
     page_icon="🟠",
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="expanded",
 )
-
 inject_theme()
-
 
 if not is_authenticated():
     render_login_screen()
     st.stop()
 
-
-# Authenticated — show home
 render_sidebar_user()
 
-u = current_user()
+user = current_user()
+user_name = user["full_name"]
+user_roles = user.get("roles") or []
 
-st.markdown(f"# Welcome, {u['full_name']}")
-brand_stripe()
+role_label_map = {
+    "master": "Hall Master",
+    "rlt_lead": "RLT Lead",
+    "rlt_finan": "RLT Finance",
+    "rlt_admin": "RLT Admin",
+    "resident_fellow": "Resident Fellow",
+    "student": "Student",
+    "student_ad_hoc": "Student (Ad-hoc)",
+}
+role_display = " · ".join(role_label_map.get(r, r) for r in user_roles) or "Member"
 
-if u.get("must_change_password"):
-    st.warning(
-        "You are using a temporary password. Please open "
-        "**Change Password** from the sidebar and update it now."
-    )
+# ── Password warning ──────────────────────────────────────────
+if user.get("must_change_password"):
+    st.warning("🔐 **Temporary password active.** Change it in the sidebar → Change Password.")
 
-st.caption(
-    "This is the home screen. Module pages (Fundraisers, Events, Calendar, "
-    "Reimbursements, Admin) will appear in the sidebar as we build them."
-)
-
-c1, c2, c3, c4 = st.columns(4)
-with c1: st.markdown(kpi("0", "Active fundraisers"), unsafe_allow_html=True)
-with c2: st.markdown(
-    kpi("0", "Pending approvals", variant="accent"),
+# ── Header ────────────────────────────────────────────────────
+st.markdown(
+    f"<h1 style='color:#0f172a;margin-bottom:0;'>Welcome, {user_name}</h1>"
+    f"<p style='color:#64748b;font-size:0.95rem;margin-top:0.2rem;'>{role_display} · Sheares Hall Ops</p>",
     unsafe_allow_html=True,
 )
-with c3: st.markdown(
-    kpi("—", "Your last login", variant="success"),
-    unsafe_allow_html=True,
-)
-with c4: st.markdown(
-    kpi("—", "Outstanding reports", variant="warning"),
-    unsafe_allow_html=True,
-)
+st.markdown('<div style="height:4px;background:linear-gradient(90deg,#ea7a1e,#f59e0b);border-radius:2px;max-width:140px;margin:0.5rem 0 1.5rem 0;"></div>', unsafe_allow_html=True)
 
-st.write("")
-st.info(
-    "Next development step: admin panel to create simulation users, "
-    "then the Fundraiser module."
-)
+
+# ── Module cards ──────────────────────────────────────────────
+
+def _can(roles: list[str] | None) -> bool:
+    return True if not roles else has_any_role(roles)
+
+
+MODULES = [
+    {
+        "icon": "💰", "title": "Fundraisers", "available": True,
+        "desc": "Propose, track and report fundraiser campaigns.",
+        "page": "pages/10_Fundraisers.py",
+        "roles": None,
+    },
+    {
+        "icon": "📅", "title": "Hall Calendar", "available": False,
+        "desc": "Events, vacations and staff coverage schedule.",
+        "page": None,
+        "roles": ["master", "rlt_lead", "rlt_finan", "rlt_admin", "resident_fellow", "student"],
+    },
+    {
+        "icon": "📊", "title": "Events & Budgets", "available": False,
+        "desc": "Pre/post-event budgets and income tracking.",
+        "page": None,
+        "roles": None,
+    },
+    {
+        "icon": "💸", "title": "Reimbursements", "available": False,
+        "desc": "Submit expenses with receipts and track approvals.",
+        "page": None,
+        "roles": None,
+    },
+    {
+        "icon": "📝", "title": "Sanction Alerts", "available": False,
+        "desc": "ICF submissions and their approval status.",
+        "page": None,
+        "roles": ["master", "rlt_lead", "rlt_finan", "rlt_admin", "resident_fellow"],
+    },
+    {
+        "icon": "⚙️", "title": "Admin", "available": True,
+        "desc": "Users, roles, passwords and system settings.",
+        "page": "pages/90_Admin.py",
+        "roles": ["master"],
+    },
+]
+
+visible = [m for m in MODULES if _can(m["roles"])]
+
+if not visible:
+    st.info("No modules available. Ask the Hall Master to assign you to a fundraiser.")
+else:
+    n = len(visible)
+    n_cols = min(n, 3)
+    for row_start in range(0, n, n_cols):
+        row = visible[row_start:row_start + n_cols]
+        cols = st.columns(n_cols)
+        for col, mod in zip(cols, row):
+            with col:
+                with st.container(border=True):
+                    badge = "" if mod["available"] else " <span style='font-size:0.65rem;color:#94a3b8;background:#f1f5f9;padding:1px 6px;border-radius:10px;vertical-align:middle;'>soon</span>"
+                    st.markdown(
+                        f"<div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.3rem;'>"
+                        f"<span style='font-size:1.4rem;'>{mod['icon']}</span>"
+                        f"<span style='font-weight:600;color:#0f172a;font-size:1rem;'>{mod['title']}</span>"
+                        f"{badge}</div>"
+                        f"<p style='color:#64748b;font-size:0.88rem;margin:0;'>{mod['desc']}</p>",
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
+                    if mod["available"] and mod["page"]:
+                        if st.button(f"Open {mod['title']}", key=f"mod_{mod['title']}",
+                                     use_container_width=True, type="primary"):
+                            st.switch_page(mod["page"])
+                    else:
+                        st.button("Coming soon", key=f"mod_{mod['title']}",
+                                  use_container_width=True, disabled=True)
