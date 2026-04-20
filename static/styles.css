@@ -622,62 +622,17 @@ div[data-testid="stAlert"] {
 .sh-profit-ok  { color: #10b981; font-weight: 600; }
 .sh-profit-bad { color: #dc2626; font-weight: 600; }
 
-/* Home compact module cards — versão compacta final */
-.sh-home-card {
-    padding: 0.6rem 0.8rem;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    background: #ffffff;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    min-height: 75px;
-}
-.sh-home-card:hover {
-    border-color: #cbd5e1;
-    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04);
-}
-.sh-home-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.45rem;
-    margin-bottom: 0.2rem;
-}
-.sh-home-card-icon {
-    font-size: 1.05rem;
-    flex-shrink: 0;
-    line-height: 1.2;
-}
-.sh-home-card-title {
-    font-weight: 600;
-    color: #0f172a;
-    font-size: 0.88rem;
-    line-height: 1.25;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-    flex-grow: 1;
-}
-.sh-home-card-desc {
-    color: #64748b;
-    font-size: 0.75rem;
-    margin: 0;
-    line-height: 1.35;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-}
-.sh-home-card-badge-soon {
-    font-size: 0.58rem;
-    color: #94a3b8;
-    background: #f1f5f9;
-    padding: 1px 5px;
-    border-radius: 8px;
-    margin-left: 0.3rem;
-    flex-shrink: 0;
-    line-height: 1.6;
-}
-/* Home card Open button — menor */
+/* ── Reset do botão primary global (removeu o size pequeno antigo) ── */
 div[data-testid="stButton"] > button[kind="primary"] {
-    font-size: 0.82rem;
-    padding: 0.3rem 0.75rem;
-    min-height: 30px;
+    font-size: 1rem !important;
+    padding: 0.5rem 1rem !important;
+    min-height: 42px !important;
+    font-weight: 500 !important;
+}
+
+/* Botões secondary nos cards — mais elegantes */
+.stButton > button[kind="secondary"] {
+    font-weight: 500 !important;
 }
 
 /* ── LIMS-style bordered containers (cards padronizados) ───────────── */
