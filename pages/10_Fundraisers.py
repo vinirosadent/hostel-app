@@ -183,21 +183,35 @@ st.markdown("---")
 # ---------- Render buckets ----------
 
 def _render_card(fr: dict) -> None:
-    """LIMS-style card — title, description (fixed height), status, Open btn."""
+    """LIMS-style card — fixed height, consistent typography."""
     with st.container(border=True):
+        # Título
         st.markdown(
-            f"<div class='sh-fcard-title'>{fr['name']}</div>",
+            f"<h4 style='color:#0f172a;margin:0 0 0.4rem 0;"
+            f"font-size:1.02rem;font-weight:600;line-height:1.3;'>"
+            f"{fr['name']}</h4>",
             unsafe_allow_html=True,
         )
+        # Descrição com altura fixa (3 linhas max, wrap natural)
         objective = (fr.get("objective") or "").strip()
-        st.markdown(
-            f"<p class='sh-fcard-desc'>{objective or '<em style=\"color:#94a3b8;\">No description.</em>'}</p>",
-            unsafe_allow_html=True,
+        desc_html = objective or (
+            "<em style='color:#94a3b8;'>No description.</em>"
         )
         st.markdown(
-            f"<div class='sh-fcard-badge-wrap'>{status_badge(fr['status'])}</div>",
+            f"<p style='color:#475569;font-size:0.85rem;"
+            f"line-height:1.45;margin:0 0 0.7rem 0;height:58px;"
+            f"overflow:hidden;display:-webkit-box;"
+            f"-webkit-line-clamp:3;-webkit-box-orient:vertical;'>"
+            f"{desc_html}</p>",
             unsafe_allow_html=True,
         )
+        # Badge de status
+        st.markdown(
+            f"<div style='margin-bottom:0.7rem;'>"
+            f"{status_badge(fr['status'])}</div>",
+            unsafe_allow_html=True,
+        )
+        # Botão Open
         if st.button("Open", key=f"open_{fr['id']}",
                      use_container_width=True, type="primary"):
             st.session_state["sh_selected_fundraiser"] = fr["id"]
@@ -205,9 +219,10 @@ def _render_card(fr: dict) -> None:
 
 
 def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
+    # Header do bucket
     st.markdown(
         f"<div style='font-weight:600;font-size:0.98rem;color:#0f172a;"
-        f"margin:1.2rem 0 0.6rem 0;'>{title} "
+        f"margin:1.3rem 0 0.7rem 0;'>{title} "
         f"<span style='color:#94a3b8;font-weight:500;'>({len(frs)})</span>"
         f"</div>",
         unsafe_allow_html=True,
@@ -215,15 +230,21 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
     if not frs:
         st.caption(empty_text)
         return
-    for i in range(0, len(frs), 3):
+
+    # Grid de 3 colunas — EXATAMENTE como o LIMS
+    n = len(frs)
+    for i in range(0, n, 3):
         cols = st.columns(3)
         chunk = frs[i:i+3]
-        for col, fr in zip(cols, chunk):
-            with col:
+        # Preenche os cards que existem
+        for j, fr in enumerate(chunk):
+            with cols[j]:
                 _render_card(fr)
+        # Reserva espaço nas colunas vazias (mantém alinhamento)
         for j in range(len(chunk), 3):
             with cols[j]:
-                st.empty()
+                # st.write("") reserva o slot sem renderizar nada visível
+                st.write("")
 
 
 # ── Renderização condicional baseada no filtro ──────────────────────────────
