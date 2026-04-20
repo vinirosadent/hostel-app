@@ -40,12 +40,12 @@ span[class*="material-symbols"] {
 section.main > div.block-container,
 .main > .block-container,
 .block-container {
-    max-width: 1300px !important;
+    max-width: 1400px !important;
     margin-left: auto !important;
     margin-right: auto !important;
-    padding-top: 2rem !important;
-    padding-left: 2rem !important;
-    padding-right: 2rem !important;
+    padding-top: 1.5rem !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
 }
 
 /* ---------- Base text sizes ---------- */

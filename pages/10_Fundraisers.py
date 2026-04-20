@@ -182,25 +182,12 @@ st.markdown("---")
 
 # ---------- Render buckets ----------
 
-def _render_card_html(fr: dict) -> str:
-    """Returns HTML string for a single card (no st.button inside)."""
-    objective = (fr.get("objective") or "").strip() or "No description."
-    status = fr["status"]
-    status_label = status.replace("_", " ").upper()
-    return (
-        f'<div class="fr-grid-card">'
-        f'  <div class="fr-card-title">{fr["name"]}</div>'
-        f'  <div class="fr-card-desc">{objective}</div>'
-        f'  <div class="fr-card-badge status-badge status-{status}">'
-        f'{status_label}</div>'
-        f'</div>'
-    )
-
-
 def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
+    """LIMS-style bucket: 3-col grid, title+desc+badge in ONE markdown,
+    button inside container."""
     st.markdown(
-        f"<div style='font-weight:600;font-size:0.98rem;color:#0f172a;"
-        f"margin:1.3rem 0 0.7rem 0;'>{title} "
+        f"<div style='font-weight:600;font-size:1rem;color:#0f172a;"
+        f"margin:1.5rem 0 0.7rem 0;'>{title} "
         f"<span style='color:#94a3b8;font-weight:500;'>({len(frs)})</span>"
         f"</div>",
         unsafe_allow_html=True,
@@ -209,27 +196,36 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
         st.caption(empty_text)
         return
 
-    # Renderiza todos os cards em um único HTML grid
-    cards_html = "".join(_render_card_html(fr) for fr in frs)
-    st.markdown(
-        f'<div class="fr-grid">{cards_html}</div>',
-        unsafe_allow_html=True,
-    )
+    c1, c2, c3 = st.columns(3)
+    cols = [c1, c2, c3]
 
-    # Botões "Open" em uma linha separada, mesma grid alignment
-    n = len(frs)
-    for i in range(0, n, 3):
-        cols = st.columns(3)
-        chunk = frs[i:i+3]
-        for j, fr in enumerate(chunk):
-            with cols[j]:
+    for i, fr in enumerate(frs):
+        with cols[i % 3]:
+            with st.container(border=True):
+                objective = (fr.get("objective") or "").strip() \
+                    or "No description provided."
+                status = fr["status"]
+                status_label = status.replace("_", " ").upper()
+
+                st.markdown(
+                    f"<h4 style='color:#0f172a;margin-top:0;"
+                    f"margin-bottom:0.4rem;font-size:1.02rem;"
+                    f"line-height:1.3;'>{fr['name']}</h4>"
+                    f"<p style='color:#475569;font-size:0.92rem;"
+                    f"height:58px;margin:0 0 0.5rem 0;line-height:1.4;"
+                    f"display:-webkit-box;-webkit-line-clamp:3;"
+                    f"-webkit-box-orient:vertical;overflow:hidden;"
+                    f"word-wrap:break-word;'>{objective}</p>"
+                    f"<span class='status-badge status-{status}' "
+                    f"style='display:inline-block;margin-bottom:0.7rem;'>"
+                    f"{status_label}</span>",
+                    unsafe_allow_html=True,
+                )
+
                 if st.button("Open", key=f"open_{fr['id']}",
                              use_container_width=True, type="primary"):
                     st.session_state["sh_selected_fundraiser"] = fr["id"]
                     st.switch_page("pages/11_Fundraiser_Detail.py")
-        for j in range(len(chunk), 3):
-            with cols[j]:
-                st.write("")
 
 
 # ── Renderização condicional baseada no filtro ──────────────────────────────
