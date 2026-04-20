@@ -149,6 +149,36 @@ if can_create:
 
 st.divider()
 
+# ── Filtro por status ────────────────────────────────────────────────────────
+FILTER_OPTIONS = [
+    ("all",                "📋 All fundraisers"),
+    ("drafts",             "📝 Drafts"),
+    ("rf_review",          "🔵 Submitted to RF"),
+    ("master_review",      "🟣 Approved by RF — Awaiting Master"),
+    ("approved",           "🟢 Approved by The Master"),
+    ("soa_review",         "🔶 Under Review of SOA"),   # futuro
+    ("executing",          "🟡 In Execution"),
+    ("reporting",          "📊 Reporting in Progress"),
+    ("dof_confirming",     "⏳ Awaiting DOF"),
+    ("finance_confirming", "⏳ Awaiting Finance"),
+    ("master_confirming",  "⏳ Awaiting Master"),
+    ("closed",             "✅ Closed / Funds Available"),
+]
+filter_labels = [opt[1] for opt in FILTER_OPTIONS]
+filter_keys   = [opt[0] for opt in FILTER_OPTIONS]
+
+col_f1, col_f2 = st.columns([1, 2])
+with col_f1:
+    selected_label = st.selectbox(
+        "🔍 Filter by status",
+        filter_labels,
+        index=0,
+        key="sh_fundraiser_filter",
+    )
+selected_key = filter_keys[filter_labels.index(selected_label)]
+
+st.markdown("---")
+
 
 # ---------- Render buckets ----------
 
@@ -196,21 +226,47 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
                 st.empty()
 
 
-_render_bucket("🟠 Drafts", buckets["drafts"],
-               "No drafts. Create one using the button above." if can_create
-               else "No drafts. Your team lead can create one.")
-
-_render_bucket("🔵 Under Review / Awaiting Approval", buckets["under_review"],
-               "Nothing pending review or approval.")
-
-_render_bucket("🟢 Approved (ready to execute)", buckets["approved"],
-               "No fundraisers awaiting execution.")
-
-_render_bucket("🟡 In Execution", buckets["executing"],
-               "No fundraisers currently running.")
-
-_render_bucket("📊 Reporting & Closure", buckets["reporting"],
-               "No fundraisers in the reporting or closure phase.")
-
-_render_bucket("✅ Funds Available / Closed", buckets["closed"],
-               "No closed fundraisers yet.")
+# ── Renderização condicional baseada no filtro ──────────────────────────────
+if selected_key == "all":
+    _render_bucket("🟠 Drafts", buckets["drafts"],
+                   "No drafts. Create one using the button above." if can_create
+                   else "No drafts. Your team lead can create one.")
+    _render_bucket("🔵 Under Review / Awaiting Approval",
+                   buckets["under_review"],
+                   "Nothing pending review or approval.")
+    _render_bucket("🟢 Approved (ready to execute)", buckets["approved"],
+                   "No fundraisers awaiting execution.")
+    _render_bucket("🟡 In Execution", buckets["executing"],
+                   "No fundraisers currently running.")
+    _render_bucket("📊 Reporting & Closure", buckets["reporting"],
+                   "No fundraisers in the reporting or closure phase.")
+    _render_bucket("✅ Funds Available / Closed", buckets["closed"],
+                   "No closed fundraisers yet.")
+else:
+    status_to_bucket = {
+        "drafts":             ("🟠 Drafts", buckets["drafts"]),
+        "rf_review":          ("🔵 Submitted to RF",
+                               [f for f in buckets["under_review"]
+                                if f["status"] == "rf_review"]),
+        "master_review":      ("🟣 Approved by RF — Awaiting Master",
+                               [f for f in buckets["under_review"]
+                                if f["status"] == "master_review"]),
+        "approved":           ("🟢 Approved", buckets["approved"]),
+        "soa_review":         ("🔶 Under Review of SOA", []),  # backend futuro
+        "executing":          ("🟡 In Execution", buckets["executing"]),
+        "reporting":          ("📊 Reporting", [f for f in buckets["reporting"]
+                               if f["status"] == "reporting"]),
+        "dof_confirming":     ("⏳ Awaiting DOF",
+                               [f for f in buckets["reporting"]
+                                if f["status"] == "dof_confirming"]),
+        "finance_confirming": ("⏳ Awaiting Finance",
+                               [f for f in buckets["reporting"]
+                                if f["status"] == "finance_confirming"]),
+        "master_confirming":  ("⏳ Awaiting Master",
+                               [f for f in buckets["reporting"]
+                                if f["status"] == "master_confirming"]),
+        "closed":             ("✅ Closed", buckets["closed"]),
+    }
+    title, items = status_to_bucket.get(selected_key, ("", []))
+    _render_bucket(title, items,
+                   f"No fundraisers in status '{selected_label}'.")
