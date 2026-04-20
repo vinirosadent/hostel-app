@@ -1,5 +1,5 @@
 /* ============================================================
-   Sheares Hall — Streamlit theme overrides (v3, LIMS-inspired)
+   Sheares Hall — Streamlit theme overrides (v4, LIMS-inspired)
    Primary: #2563eb (blue)   Accent: #ea7a1e (orange Sheares)
    Positive: #10b981        Warning: #f59e0b        Danger: #dc2626
    ============================================================ */
@@ -31,11 +31,21 @@ span[class*="material-symbols"] {
     font-feature-settings: 'liga';
 }
 
-/* ---------- Container width (LIMS style) ---------- */
-.main .block-container {
+/* ---------- Container width (LIMS style, multiple Streamlit versions) ---------- */
+/* O Streamlit trocou o nome da classe do container principal entre versões.
+   Este bloco cobre todas as variações conhecidas: .main .block-container (antigo),
+   [data-testid="stMainBlockContainer"] (novo), e fallbacks genéricos. */
+.stMainBlockContainer,
+[data-testid="stMainBlockContainer"],
+section.main > div.block-container,
+.main > .block-container,
+.block-container {
     max-width: 1300px !important;
-    padding-top: 2rem;
-    margin: 0 auto;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    padding-top: 2rem !important;
+    padding-left: 2rem !important;
+    padding-right: 2rem !important;
 }
 
 /* ---------- Base text sizes ---------- */
@@ -703,4 +713,95 @@ div[data-testid="stVerticalBlock"] > div[style*="border"] {
 }
 .sh-fcard-badge-wrap {
     margin-bottom: 0.7rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FIX: Material Symbols leak ("keyboard_double", "arrow_right", etc.)
+   Quando Google Fonts não carrega, o nome do ícone aparece como texto.
+   Esconde esses vazamentos sem quebrar o layout.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Garante que TODOS os spans de Material Symbols usem a fonte correta */
+span[class*="material-symbols"],
+span.material-symbols-outlined,
+span.material-symbols-rounded,
+span.material-symbols-sharp {
+    font-family: 'Material Symbols Outlined',
+                 'Material Symbols Rounded',
+                 'Material Symbols Sharp',
+                 'Material Icons' !important;
+    font-feature-settings: 'liga';
+}
+
+/* Botão de colapsar sidebar — onde aparece o "keyboard_double".
+   Esconde o texto literal e desenha um chevron "<" via CSS puro,
+   usando fonte do sistema (nunca falha). */
+[data-testid="stSidebarCollapseButton"] span,
+[data-testid="stSidebarCollapsedControl"] span {
+    font-size: 0 !important;
+    color: transparent !important;
+}
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"] {
+    position: relative;
+    overflow: hidden;
+}
+[data-testid="stSidebarCollapseButton"]::after,
+[data-testid="stSidebarCollapsedControl"]::after {
+    content: "‹";
+    font-size: 1.3rem;
+    color: #64748b;
+    font-family: system-ui, -apple-system, sans-serif;
+    font-weight: 500;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+/* Fundraiser grid — CSS Grid nativo, independente de Streamlit columns */
+.fr-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+.fr-grid-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+}
+.fr-card-title {
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 1.02rem;
+    line-height: 1.3;
+    margin-bottom: 0.4rem;
+}
+.fr-card-desc {
+    color: #475569;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    margin-bottom: 0.7rem;
+    height: 58px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+}
+.fr-card-badge {
+    align-self: flex-start;
+    margin-bottom: 0;
+}
+
+/* Mobile responsive — colapsa pra 1 coluna em telas < 768px */
+@media (max-width: 768px) {
+    .fr-grid {
+        grid-template-columns: 1fr;
+    }
 }

@@ -182,44 +182,22 @@ st.markdown("---")
 
 # ---------- Render buckets ----------
 
-def _render_card(fr: dict) -> None:
-    """LIMS-style card — fixed height, consistent typography."""
-    with st.container(border=True):
-        # Título
-        st.markdown(
-            f"<h4 style='color:#0f172a;margin:0 0 0.4rem 0;"
-            f"font-size:1.02rem;font-weight:600;line-height:1.3;'>"
-            f"{fr['name']}</h4>",
-            unsafe_allow_html=True,
-        )
-        # Descrição com altura fixa (3 linhas max, wrap natural)
-        objective = (fr.get("objective") or "").strip()
-        desc_html = objective or (
-            "<em style='color:#94a3b8;'>No description.</em>"
-        )
-        st.markdown(
-            f"<p style='color:#475569;font-size:0.85rem;"
-            f"line-height:1.45;margin:0 0 0.7rem 0;height:58px;"
-            f"overflow:hidden;display:-webkit-box;"
-            f"-webkit-line-clamp:3;-webkit-box-orient:vertical;'>"
-            f"{desc_html}</p>",
-            unsafe_allow_html=True,
-        )
-        # Badge de status
-        st.markdown(
-            f"<div style='margin-bottom:0.7rem;'>"
-            f"{status_badge(fr['status'])}</div>",
-            unsafe_allow_html=True,
-        )
-        # Botão Open
-        if st.button("Open", key=f"open_{fr['id']}",
-                     use_container_width=True, type="primary"):
-            st.session_state["sh_selected_fundraiser"] = fr["id"]
-            st.switch_page("pages/11_Fundraiser_Detail.py")
+def _render_card_html(fr: dict) -> str:
+    """Returns HTML string for a single card (no st.button inside)."""
+    objective = (fr.get("objective") or "").strip() or "No description."
+    status = fr["status"]
+    status_label = status.replace("_", " ").upper()
+    return (
+        f'<div class="fr-grid-card">'
+        f'  <div class="fr-card-title">{fr["name"]}</div>'
+        f'  <div class="fr-card-desc">{objective}</div>'
+        f'  <div class="fr-card-badge status-badge status-{status}">'
+        f'{status_label}</div>'
+        f'</div>'
+    )
 
 
 def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
-    # Header do bucket
     st.markdown(
         f"<div style='font-weight:600;font-size:0.98rem;color:#0f172a;"
         f"margin:1.3rem 0 0.7rem 0;'>{title} "
@@ -231,19 +209,26 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
         st.caption(empty_text)
         return
 
-    # Grid de 3 colunas — EXATAMENTE como o LIMS
+    # Renderiza todos os cards em um único HTML grid
+    cards_html = "".join(_render_card_html(fr) for fr in frs)
+    st.markdown(
+        f'<div class="fr-grid">{cards_html}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Botões "Open" em uma linha separada, mesma grid alignment
     n = len(frs)
     for i in range(0, n, 3):
         cols = st.columns(3)
         chunk = frs[i:i+3]
-        # Preenche os cards que existem
         for j, fr in enumerate(chunk):
             with cols[j]:
-                _render_card(fr)
-        # Reserva espaço nas colunas vazias (mantém alinhamento)
+                if st.button("Open", key=f"open_{fr['id']}",
+                             use_container_width=True, type="primary"):
+                    st.session_state["sh_selected_fundraiser"] = fr["id"]
+                    st.switch_page("pages/11_Fundraiser_Detail.py")
         for j in range(len(chunk), 3):
             with cols[j]:
-                # st.write("") reserva o slot sem renderizar nada visível
                 st.write("")
 
 
