@@ -31,7 +31,7 @@ from typing import Optional
 
 import streamlit as st
 
-from components.ui import inject_theme, brand_stripe, status_badge, workflow_progress_bar
+from components.ui import inject_theme, brand_stripe, status_badge, workflow_progress_bar, corporate_table
 from components.auth_ui import render_sidebar_user
 from services.auth_service import (
     require_login, is_staff, is_master, has_role, has_any_role,
@@ -61,6 +61,18 @@ def _parse_date(val: object) -> Optional[date]:
         return date.fromisoformat(str(val)[:10])
     except (ValueError, TypeError):
         return None
+
+
+def _reset_and_scroll(form_keys: list[str], success_msg: str) -> None:
+    for k in form_keys:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.session_state["sh_action_msg"] = ("success", success_msg)
+    st.markdown(
+        "<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>",
+        unsafe_allow_html=True,
+    )
+    st.rerun()
 
 
 st.set_page_config(
@@ -117,10 +129,11 @@ except Exception:
 
 is_committee_member = any(s["user_id"] == user["id"] for s in _students_raw)
 
-# Draft: creator OR any committee member can edit; RF at rf_review; Master always
+# Draft: creator OR any committee member can edit; RF is hands-on from draft; Master always
 can_edit_proposal = (
     ((is_creator or is_committee_member) and status in ("draft", "rejected"))
-    or (_is_rf and (is_rf_in_charge or is_staff()) and status == "rf_review")
+    or (_is_rf and is_rf_in_charge and status in ("draft", "rejected", "rf_review"))
+    or (is_staff() and not _is_rf and status in ("rf_review", "master_review"))
     or _is_master
 )
 can_edit_report = (
@@ -215,18 +228,18 @@ def _build_progress_stages() -> list[dict]:
     cur = _cur_rank()
     stages = []
     for i, sdef in enumerate(_APPROVAL_STAGES):
+        date_str = _fmt_date(fr.get(sdef["ts"])) if fr.get(sdef["ts"]) else ""
+
         if status == "rejected" and i == 0:
             state = "rejected"
-            date_str = ""
         elif cur > sdef["rank"]:
             state = "completed"
-            date_str = _fmt_date(fr.get(sdef["ts"]))
         elif cur == sdef["rank"] or status in sdef["statuses"]:
             state = "current"
-            date_str = ""
         else:
             state = "pending"
-            date_str = ""
+            date_str = ""  # pending stages never have a date
+
         stages.append({"label": sdef["label"], "state": state, "date_str": date_str})
     return stages
 
@@ -282,7 +295,7 @@ tab_purchaser = _all_tabs[_ti] if _show_purchaser else None
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_proposal:
-    col_l, col_r = st.columns([3, 2])
+    col_l, col_r = st.columns([1, 1])
     with col_l:
         t1_name = st.text_input(
             "Name of Project *",
@@ -304,6 +317,29 @@ with tab_proposal:
             disabled=not can_edit_proposal,
             key="t1_beneficiary",
             placeholder="e.g. Sheares Hall Sports Fund, Charity XYZ",
+        )
+        t1_prepared_by = st.text_input(
+            "Proposal prepared by *",
+            value=fr.get("proposal_prepared_by") or (
+                user["full_name"] if status in ("draft", "rejected") else ""
+            ),
+            disabled=not can_edit_proposal,
+            key="t1_prepared_by",
+            help="Full name of the student drafting this proposal.",
+        )
+        t1_on_behalf_of = st.text_input(
+            "On behalf of Committee / Activity *",
+            value=fr.get("on_behalf_of") or "",
+            disabled=not can_edit_proposal,
+            key="t1_on_behalf_of",
+            placeholder="e.g. Block A Welfare Committee, Christmas Drive 2025",
+            help="Name of the committee or activity this fundraiser supports.",
+        )
+        t1_flyer_person = st.text_input(
+            "Person responsible for flyer removal",
+            value=fr.get("flyer_remover_name") or "",
+            disabled=not can_edit_proposal,
+            key="t1_flyer_person",
         )
 
     with col_r:
@@ -363,13 +399,6 @@ with tab_proposal:
             flyer_date_str = None
             report_date_str = None
 
-        t1_flyer_person = st.text_input(
-            "Person responsible for flyer removal",
-            value=fr.get("flyer_remover_name") or "",
-            disabled=not can_edit_proposal,
-            key="t1_flyer_person",
-        )
-
     st.markdown("---")
 
     st.markdown("#### Mandatory Compliance Confirmation")
@@ -417,6 +446,8 @@ with tab_proposal:
                         "name": t1_name.strip(),
                         "objective": t1_desc.strip() or None,
                         "beneficiary": t1_beneficiary.strip() or None,
+                        "proposal_prepared_by": t1_prepared_by.strip() or None,
+                        "on_behalf_of": t1_on_behalf_of.strip() or None,
                         "marketing_start": str(t1_mkt_start) if t1_mkt_start else None,
                         "marketing_end": str(t1_mkt_end) if t1_mkt_end else None,
                         "ordering_start": str(t1_ord_start) if t1_ord_start else None,
@@ -535,110 +566,140 @@ with tab_items:
                     return c1 + c2
         return "X"
 
-    if items:
-        st.markdown("#### Registered Items")
-        grand_total = sum(float(it["unit_cost"]) * int(it["quantity"]) for it in items)
-
-        for it in items:
-            name_d = it.get("item_name") or it["item_code"]
-            uc = float(it["unit_cost"])
-            qty = int(it["quantity"])
-            tc = uc * qty
-            is_editing = st.session_state.get("sh_edit_item_id") == it["id"]
-
+    # ── Inline edit form (shown above table when editing) ─────────────────
+    _edit_item_id = st.session_state.get("sh_edit_item_id")
+    if _edit_item_id and can_edit_proposal:
+        _edit_it = next((it for it in items if it["id"] == _edit_item_id), None)
+        if _edit_it:
+            _ename_d = _edit_it.get("item_name") or _edit_it["item_code"]
+            _euc = float(_edit_it["unit_cost"])
+            _eqty = int(_edit_it["quantity"])
             with st.container(border=True):
-                if is_editing and can_edit_proposal:
-                    ec1, ec2, ec3, ec4 = st.columns([3, 2, 2, 2])
-                    with ec1:
-                        e_name = st.text_input("Item name", value=name_d,
-                                               key=f"ename_{it['id']}")
-                    with ec2:
-                        e_supp = st.text_input("Supplier", value=it.get("supplier") or "",
-                                               key=f"esupp_{it['id']}")
-                    with ec3:
-                        e_qty = st.number_input("Quantity", value=qty, min_value=1,
-                                                key=f"eqty_{it['id']}")
-                    with ec4:
-                        e_cost = st.number_input("Unit Cost (SGD)", value=uc, min_value=0.0,
-                                                  format="%.2f", key=f"ecost_{it['id']}")
-                    e_total = e_cost * e_qty
-                    quote_note = "  ⚠️ *Quote required (total ≥ SGD 1,000)*" if e_total >= 1000 else ""
-                    st.info(f"Total Cost: **SGD {e_total:.2f}**{quote_note}")
-                    cs, cc = st.columns(2)
-                    with cs:
-                        if st.button("✅ Confirm", key=f"esave_{it['id']}", type="primary",
-                                     use_container_width=True):
-                            if not e_name.strip():
-                                st.error("Item name cannot be empty.")
-                            else:
-                                try:
-                                    upsert_item(
-                                        fr_id, it["item_code"],
-                                        item_name=e_name.strip(),
-                                        supplier=e_supp.strip() or None,
-                                        quantity=int(e_qty),
-                                        unit_cost=float(e_cost),
-                                    )
-                                    st.session_state.pop("sh_edit_item_id", None)
-                                    st.rerun()
-                                except Exception as ex:
-                                    st.error(f"Save failed: {ex}")
-                    with cc:
-                        if st.button("Cancel", key=f"ecancel_{it['id']}",
-                                     use_container_width=True):
-                            st.session_state.pop("sh_edit_item_id", None)
-                            st.rerun()
-                else:
-                    rc1, rc2, rc3, rc4, rc5, rca, rcb = st.columns([3, 2, 1, 2, 2, 1, 1])
-                    with rc1:
-                        q_icon = " ⚠️" if it.get("requires_quote") else ""
-                        st.markdown(f"**{name_d}**{q_icon}")
-                    with rc2:
-                        st.caption(it.get("supplier") or "—")
-                    with rc3:
-                        st.caption(f"×{qty}")
-                    with rc4:
-                        st.caption(f"Unit: SGD {uc:.2f}")
-                    with rc5:
-                        st.caption(f"Total: **SGD {tc:.2f}**")
-                    if can_edit_proposal:
-                        with rca:
-                            if st.button("✏️", key=f"edit_item_{it['id']}",
-                                         use_container_width=True,
-                                         help="Edit this item"):
-                                st.session_state["sh_edit_item_id"] = it["id"]
-                                st.rerun()
-                        with rcb:
-                            if st.button("🗑️", key=f"del_item_btn_{it['id']}",
-                                         use_container_width=True,
-                                         help="Delete this item"):
-                                st.session_state["sh_confirm_del_item"] = it["id"]
-                                st.rerun()
+                st.markdown(f"**Edit Item — {_ename_d}**")
+                ec1, ec2, ec3, ec4 = st.columns([3, 2, 2, 2])
+                with ec1:
+                    e_name = st.text_input("Item name", value=_ename_d,
+                                           key=f"ename_{_edit_item_id}")
+                with ec2:
+                    e_supp = st.text_input("Supplier",
+                                           value=_edit_it.get("supplier") or "",
+                                           key=f"esupp_{_edit_item_id}")
+                with ec3:
+                    e_qty = st.number_input("Quantity", value=_eqty, min_value=1,
+                                            key=f"eqty_{_edit_item_id}")
+                with ec4:
+                    e_cost = st.number_input("Unit Cost (SGD)", value=_euc,
+                                              min_value=0.0, format="%.2f",
+                                              key=f"ecost_{_edit_item_id}")
+                e_total = e_cost * e_qty
+                quote_note = "  ⚠️ *Quote required (total ≥ SGD 1,000)*" if e_total >= 1000 else ""
+                st.info(f"Total Cost: **SGD {e_total:,.2f}**{quote_note}")
+                cs, cc = st.columns(2)
+                with cs:
+                    if st.button("✅ Confirm", key=f"esave_{_edit_item_id}",
+                                 type="primary", use_container_width=True):
+                        if not e_name.strip():
+                            st.error("Item name cannot be empty.")
+                        else:
+                            try:
+                                upsert_item(
+                                    fr_id, _edit_it["item_code"],
+                                    item_name=e_name.strip(),
+                                    supplier=e_supp.strip() or None,
+                                    quantity=int(e_qty),
+                                    unit_cost=float(e_cost),
+                                )
+                                _reset_and_scroll(
+                                    [f"ename_{_edit_item_id}", f"esupp_{_edit_item_id}",
+                                     f"eqty_{_edit_item_id}", f"ecost_{_edit_item_id}",
+                                     "sh_edit_item_id"],
+                                    f"Item '{e_name.strip()}' saved.",
+                                )
+                            except Exception as ex:
+                                st.error(f"Save failed: {ex}")
+                with cc:
+                    if st.button("Cancel", key=f"ecancel_{_edit_item_id}",
+                                 use_container_width=True):
+                        st.session_state.pop("sh_edit_item_id", None)
+                        st.rerun()
 
-            if st.session_state.get("sh_confirm_del_item") == it["id"]:
-                with st.container(border=True):
-                    st.warning(f"Delete **{name_d}**? This cannot be undone.")
-                    ca, cb = st.columns(2)
-                    with ca:
-                        if st.button("Yes, delete", key=f"confirm_del_item_{it['id']}",
-                                     type="primary"):
-                            delete_item(it["id"])
-                            st.session_state.pop("sh_confirm_del_item", None)
-                            st.session_state.pop("sh_edit_item_id", None)
-                            st.rerun()
-                    with cb:
-                        if st.button("Cancel", key=f"cancel_del_item_{it['id']}"):
-                            st.session_state.pop("sh_confirm_del_item", None)
-                            st.rerun()
+    # ── Corporate table ───────────────────────────────────────────────────
+    _items_cols = [
+        {"key": "item_code",    "label": "Code",            "flex": 1, "mono": True},
+        {"key": "item_name",    "label": "Name",            "flex": 3},
+        {"key": "supplier",     "label": "Supplier",        "flex": 2},
+        {"key": "quantity",     "label": "Qty",             "flex": 1, "align": "right"},
+        {"key": "unit_cost_f",  "label": "Unit Cost (SGD)", "flex": 2, "align": "right"},
+        {"key": "total_f",      "label": "Total (SGD)",     "flex": 2, "align": "right"},
+        {"key": "quote_f",      "label": "Quote?",          "flex": 1, "align": "center"},
+    ]
 
+    grand_total = 0.0
+    _items_rows: list[dict] = []
+    for it in items:
+        uc = float(it["unit_cost"])
+        qty = int(it["quantity"])
+        tc = uc * qty
+        grand_total += tc
+        _items_rows.append({
+            "id": it["id"],
+            "item_code": it["item_code"],
+            "item_name": it.get("item_name") or it["item_code"],
+            "supplier": it.get("supplier") or "—",
+            "quantity": qty,
+            "unit_cost_f": f"{uc:,.2f}",
+            "total_f": f"{tc:,.2f}",
+            "quote_f": "⚠️ Yes" if it.get("requires_quote") else "No",
+        })
+
+    def _item_actions(row: dict) -> None:
+        ca, cb = st.columns(2)
+        with ca:
+            if st.button("✏️", key=f"edit_item_{row['id']}",
+                         use_container_width=True, help="Edit"):
+                st.session_state["sh_edit_item_id"] = row["id"]
+                st.rerun()
+        with cb:
+            if st.button("🗑️", key=f"del_item_btn_{row['id']}",
+                         use_container_width=True, help="Delete"):
+                st.session_state["sh_confirm_del_item"] = row["id"]
+                st.rerun()
+
+    corporate_table(
+        _items_cols,
+        _items_rows,
+        empty_text="No items registered yet.",
+        row_actions_fn=_item_actions if can_edit_proposal else None,
+    )
+
+    if _items_rows:
         st.markdown(
             f"<div style='text-align:right;font-weight:600;color:#0f172a;"
-            f"padding:0.5rem 0;border-top:2px solid #e2e8f0;margin-top:0.5rem;'>"
-            f"Total Cost of All Items: SGD {grand_total:.2f}</div>",
+            f"padding:0.5rem 0;border-top:2px solid #e2e8f0;margin-top:0.25rem;'>"
+            f"Total Cost of All Items: SGD {grand_total:,.2f}</div>",
             unsafe_allow_html=True,
         )
-    else:
-        st.info("No items registered yet. Use the form below to add items.")
+
+    # ── Delete confirmation ────────────────────────────────────────────────
+    _del_item_id = st.session_state.get("sh_confirm_del_item")
+    if _del_item_id:
+        _del_it = next((it for it in items if it["id"] == _del_item_id), None)
+        if _del_it:
+            _del_name = _del_it.get("item_name") or _del_it["item_code"]
+            with st.container(border=True):
+                st.warning(f"Delete **{_del_name}**? This cannot be undone.")
+                ca, cb = st.columns(2)
+                with ca:
+                    if st.button("Yes, delete", key=f"confirm_del_item_{_del_item_id}",
+                                 type="primary"):
+                        delete_item(_del_item_id)
+                        st.session_state.pop("sh_confirm_del_item", None)
+                        st.session_state.pop("sh_edit_item_id", None)
+                        st.rerun()
+                with cb:
+                    if st.button("Cancel", key=f"cancel_del_item_{_del_item_id}"):
+                        st.session_state.pop("sh_confirm_del_item", None)
+                        st.rerun()
 
     if can_edit_proposal:
         st.markdown("---")
@@ -689,9 +750,11 @@ with tab_items:
                                     quantity=int(new_qty),
                                     unit_cost=float(new_cost),
                                 )
-                                st.session_state.pop("sh_adding_item", None)
-                                st.success(f"'{new_name}' added.")
-                                st.rerun()
+                                _reset_and_scroll(
+                                    ["add_item_name", "add_item_supplier",
+                                     "add_item_qty", "add_item_cost", "sh_adding_item"],
+                                    f"Item '{new_name.strip()}' added.",
+                                )
                             except Exception as ex:
                                 st.error(f"Could not add item: {ex}")
                 with cc2:
@@ -718,127 +781,154 @@ with tab_selling:
         "GST collected from customers is remitted to the government — it is not part of the Committee's profit."
     )
 
-    options = list_selling_options(fr_id)
+    # FIX 11 — singles first (alphabetical), bundles second (alphabetical)
+    options = sorted(
+        list_selling_options(fr_id),
+        key=lambda x: (0 if x["option_type"] == "single" else 1, x["option_name"].lower()),
+    )
+
+    # ── Inline edit form (above table) ────────────────────────────────────
+    _edit_opt_id = st.session_state.get("sh_edit_opt_id")
+    if _edit_opt_id and can_edit_proposal:
+        _edit_o = next((o for o in options if o["id"] == _edit_opt_id), None)
+        if _edit_o:
+            _euc = float(_edit_o["unit_cost"])
+            _esp = float(_edit_o["selling_price"])
+            _ecomp = _edit_o.get("composition") or {}
+            with st.container(border=True):
+                st.markdown(f"**Edit Option — {_edit_o['option_name']}**")
+                eo1, eo2 = st.columns([3, 2])
+                with eo1:
+                    e_opt_name = st.text_input(
+                        "Option name", value=_edit_o["option_name"],
+                        key=f"eoptname_{_edit_opt_id}",
+                    )
+                with eo2:
+                    e_opt_price = st.number_input(
+                        "Selling Price before GST (SGD)", value=_esp,
+                        min_value=0.0, format="%.2f", key=f"eoptprice_{_edit_opt_id}",
+                    )
+                if e_opt_price > 0:
+                    ep = e_opt_price - _euc
+                    ep_pct = (ep / _euc * 100) if _euc > 0 else 0
+                    efinal = e_opt_price * (1 + GST_RATE)
+                    col_col = "green" if ep_pct >= 20 else "red"
+                    st.markdown(
+                        f"Unit Cost: **SGD {_euc:,.2f}** · "
+                        f"Selling Price (ex-GST): **SGD {e_opt_price:,.2f}** · "
+                        f"Final Price: **SGD {efinal:,.2f}**<br>"
+                        f"<span style='color:{col_col}'>Profit: **SGD {ep:,.2f}** "
+                        f"({ep_pct:.1f}%)</span>",
+                        unsafe_allow_html=True,
+                    )
+                es, ec_btn = st.columns(2)
+                with es:
+                    if st.button("✅ Confirm", key=f"saveopt_{_edit_opt_id}",
+                                 type="primary", use_container_width=True):
+                        if not e_opt_name.strip():
+                            st.error("Option name cannot be empty.")
+                        elif e_opt_price <= 0:
+                            st.error("Selling price must be greater than zero.")
+                        else:
+                            try:
+                                upsert_selling_option(
+                                    fr_id, e_opt_name.strip(),
+                                    option_type=_edit_o["option_type"],
+                                    composition=_ecomp,
+                                    selling_price=float(e_opt_price),
+                                    option_id=_edit_o["id"],
+                                )
+                                _reset_and_scroll(
+                                    [f"eoptname_{_edit_opt_id}",
+                                     f"eoptprice_{_edit_opt_id}",
+                                     "sh_edit_opt_id"],
+                                    f"Option '{e_opt_name.strip()}' saved.",
+                                )
+                            except Exception as ex:
+                                st.error(f"Save failed: {ex}")
+                with ec_btn:
+                    if st.button("Cancel", key=f"cancelopt_{_edit_opt_id}",
+                                 use_container_width=True):
+                        st.session_state.pop("sh_edit_opt_id", None)
+                        st.rerun()
+
+    # ── Corporate table ───────────────────────────────────────────────────
+    _opts_cols = [
+        {"key": "option_type_f",  "label": "Type",                      "flex": 1},
+        {"key": "option_name",    "label": "Option",                     "flex": 3},
+        {"key": "composition_str","label": "Composition",                "flex": 3},
+        {"key": "unit_cost_f",    "label": "Unit Cost (SGD)",            "flex": 2, "align": "right"},
+        {"key": "sell_f",         "label": "Sell ex-GST (SGD)",          "flex": 2, "align": "right"},
+        {"key": "final_f",        "label": "Final Price inc. GST (SGD)", "flex": 2, "align": "right"},
+        {"key": "profit_f",       "label": "Profit (SGD / %)",           "flex": 2, "align": "right"},
+    ]
+
+    _opts_rows: list[dict] = []
+    for o in options:
+        comp = o.get("composition") or {}
+        comp_str = ", ".join(f"{item_display.get(k, k)} ×{v}" for k, v in comp.items())
+        uc = float(o["unit_cost"])
+        sp = float(o["selling_price"])
+        profit = sp - uc
+        profit_pct = (profit / uc * 100) if uc > 0 else 0.0
+        final_price = sp * (1 + GST_RATE)
+        ok = o.get("is_acceptable", False)
+        p_cls = "sh-profit-ok" if ok else "sh-profit-bad"
+        _opts_rows.append({
+            "id": o["id"],
+            "option_type":   o["option_type"],
+            "option_type_f": o["option_type"].capitalize(),
+            "option_name":   o["option_name"],
+            "composition_str": comp_str or "—",
+            "unit_cost_f": f"{uc:,.2f}",
+            "sell_f":      f"{sp:,.2f}",
+            "final_f":     f"{final_price:,.2f}",
+            "profit_f":    f'<span class="{p_cls}">{profit:,.2f} ({profit_pct:.1f}%)</span>',
+        })
+
+    def _opt_actions(row: dict) -> None:
+        ca, cb = st.columns(2)
+        with ca:
+            if st.button("✏️", key=f"editopt_{row['id']}",
+                         use_container_width=True, help="Edit"):
+                st.session_state["sh_edit_opt_id"] = row["id"]
+                st.rerun()
+        with cb:
+            if st.button("🗑️", key=f"delopt_btn_{row['id']}",
+                         use_container_width=True, help="Delete"):
+                st.session_state["sh_confirm_del_opt"] = row["id"]
+                st.rerun()
+
+    corporate_table(
+        _opts_cols,
+        _opts_rows,
+        empty_text="No selling options yet.",
+        row_actions_fn=_opt_actions if can_edit_proposal else None,
+    )
+
+    if options and not all(o.get("is_acceptable") for o in options):
+        st.warning("⚠️ One or more options are below the minimum profit target.")
+
+    # ── Delete confirmation ────────────────────────────────────────────────
+    _del_opt_id = st.session_state.get("sh_confirm_del_opt")
+    if _del_opt_id:
+        _del_o = next((o for o in options if o["id"] == _del_opt_id), None)
+        if _del_o:
+            with st.container(border=True):
+                st.warning(f"Delete **{_del_o['option_name']}**? This cannot be undone.")
+                da, db = st.columns(2)
+                with da:
+                    if st.button("Yes, delete", key=f"confirm_del_opt_{_del_opt_id}",
+                                 type="primary"):
+                        delete_selling_option(_del_opt_id)
+                        st.session_state.pop("sh_confirm_del_opt", None)
+                        st.rerun()
+                with db:
+                    if st.button("Cancel", key=f"cancel_del_opt_{_del_opt_id}"):
+                        st.session_state.pop("sh_confirm_del_opt", None)
+                        st.rerun()
 
     if options:
-        st.markdown("#### Registered Selling Options")
-        for o in options:
-            comp = o.get("composition") or {}
-            comp_str = ", ".join(
-                f"{item_display.get(k, k)} ×{v}" for k, v in comp.items()
-            )
-            uc = float(o["unit_cost"])
-            sp = float(o["selling_price"])
-            profit = sp - uc
-            profit_pct = (profit / uc * 100) if uc > 0 else 0.0
-            final_price = sp * (1 + GST_RATE)
-            ok = o.get("is_acceptable", False)
-            is_editing_opt = st.session_state.get("sh_edit_opt_id") == o["id"]
-
-            with st.container(border=True):
-                if is_editing_opt and can_edit_proposal:
-                    eo1, eo2 = st.columns([3, 2])
-                    with eo1:
-                        e_opt_name = st.text_input(
-                            "Option name", value=o["option_name"], key=f"eoptname_{o['id']}"
-                        )
-                    with eo2:
-                        e_opt_price = st.number_input(
-                            "Selling Price before GST (SGD)", value=sp,
-                            min_value=0.0, format="%.2f", key=f"eoptprice_{o['id']}"
-                        )
-                    if e_opt_price > 0:
-                        ep = e_opt_price - uc
-                        ep_pct = (ep / uc * 100) if uc > 0 else 0
-                        efinal = e_opt_price * (1 + GST_RATE)
-                        col_col = "green" if ep_pct >= 20 else "red"
-                        st.markdown(
-                            f"Unit Cost: **SGD {uc:.2f}** · "
-                            f"Selling Price (before GST): **SGD {e_opt_price:.2f}** · "
-                            f"Final Customer Price: **SGD {efinal:.2f}**<br>"
-                            f"<span style='color:{col_col}'>Nominal Profit: **SGD {ep:.2f}** "
-                            f"({ep_pct:.1f}%)</span>",
-                            unsafe_allow_html=True,
-                        )
-                    es, ec_btn = st.columns(2)
-                    with es:
-                        if st.button("✅ Confirm", key=f"saveopt_{o['id']}", type="primary",
-                                     use_container_width=True):
-                            if not e_opt_name.strip():
-                                st.error("Option name cannot be empty.")
-                            elif e_opt_price <= 0:
-                                st.error("Selling price must be greater than zero.")
-                            else:
-                                try:
-                                    upsert_selling_option(
-                                        fr_id, e_opt_name.strip(),
-                                        option_type=o["option_type"],
-                                        composition=comp,
-                                        selling_price=float(e_opt_price),
-                                        option_id=o["id"],
-                                    )
-                                    st.session_state.pop("sh_edit_opt_id", None)
-                                    st.rerun()
-                                except Exception as ex:
-                                    st.error(f"Save failed: {ex}")
-                    with ec_btn:
-                        if st.button("Cancel", key=f"cancelopt_{o['id']}",
-                                     use_container_width=True):
-                            st.session_state.pop("sh_edit_opt_id", None)
-                            st.rerun()
-                else:
-                    hc1, hc2, hc3, hc4, hc5, hc6, hca, hcb = st.columns(
-                        [3, 1, 2, 2, 2, 2, 1, 1]
-                    )
-                    with hc1:
-                        badge = "✅" if ok else "⚠️"
-                        st.markdown(f"**{badge} {o['option_name']}**")
-                        st.caption(comp_str)
-                    with hc2:
-                        st.caption(o["option_type"].capitalize())
-                    with hc3:
-                        st.caption(f"Unit Cost\nSGD {uc:.2f}")
-                    with hc4:
-                        st.caption(f"Sell (ex-GST)\nSGD {sp:.2f}")
-                    with hc5:
-                        st.caption(f"Final Price\nSGD {final_price:.2f}")
-                    with hc6:
-                        col_s = "green" if ok else "red"
-                        st.markdown(
-                            f"<span style='color:{col_s};font-size:0.85rem;'>"
-                            f"Profit: SGD {profit:.2f} ({profit_pct:.1f}%)</span>",
-                            unsafe_allow_html=True,
-                        )
-                    if can_edit_proposal:
-                        with hca:
-                            if st.button("✏️", key=f"editopt_{o['id']}",
-                                         use_container_width=True, help="Edit"):
-                                st.session_state["sh_edit_opt_id"] = o["id"]
-                                st.rerun()
-                        with hcb:
-                            if st.button("🗑️", key=f"delopt_btn_{o['id']}",
-                                         use_container_width=True, help="Delete"):
-                                st.session_state["sh_confirm_del_opt"] = o["id"]
-                                st.rerun()
-
-            if st.session_state.get("sh_confirm_del_opt") == o["id"]:
-                with st.container(border=True):
-                    st.warning(f"Delete **{o['option_name']}**? This cannot be undone.")
-                    da, db = st.columns(2)
-                    with da:
-                        if st.button("Yes, delete", key=f"confirm_del_opt_{o['id']}",
-                                     type="primary"):
-                            delete_selling_option(o["id"])
-                            st.session_state.pop("sh_confirm_del_opt", None)
-                            st.rerun()
-                    with db:
-                        if st.button("Cancel", key=f"cancel_del_opt_{o['id']}"):
-                            st.session_state.pop("sh_confirm_del_opt", None)
-                            st.rerun()
-
-        if not all(o.get("is_acceptable") for o in options):
-            st.warning("⚠️ One or more options are below the minimum profit target.")
-
         st.markdown("---")
         st.markdown("#### Summary")
         items_for_summary = list_items(fr_id)
@@ -847,7 +937,7 @@ with tab_selling:
         )
         st.markdown(
             f"<div style='display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:0.5rem;'>"
-            f"<div><b>Total Cost (items purchased)</b><br>SGD {total_cost_s:.2f}</div>"
+            f"<div><b>Total Cost (items purchased)</b><br>SGD {total_cost_s:,.2f}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -910,8 +1000,11 @@ with tab_selling:
                                         composition={sel_code: 1},
                                         selling_price=float(so_sell),
                                     )
-                                    st.success(f"'{so_name_s}' added.")
-                                    st.rerun()
+                                    _reset_and_scroll(
+                                        ["so_single_item", "so_single_price",
+                                         "so_single_name", "so_type_radio"],
+                                        f"Option '{(so_name_s or auto_name_s).strip()}' added.",
+                                    )
                                 except (ValidationError, Exception) as ex:
                                     st.error(f"Error: {ex}")
 
@@ -977,8 +1070,11 @@ with tab_selling:
                                         composition=composition_c,
                                         selling_price=float(so_sell_c),
                                     )
-                                    st.success(f"Combo '{so_name_c}' added.")
-                                    st.rerun()
+                                    _reset_and_scroll(
+                                        ["so_combo_items", "so_combo_name",
+                                         "so_combo_price", "so_type_radio"],
+                                        f"Combo '{so_name_c.strip()}' added.",
+                                    )
                                 except (ValidationError, Exception) as ex:
                                     st.error(f"Error: {ex}")
 
@@ -1128,7 +1224,7 @@ def _render_appendix(section: str, section_label: str) -> None:
 
                         # Edit metadata panel
                         if st.session_state.get(f"sh_edit_asset_{section}") == asset["id"]:
-                            with st.expander("Edit metadata", expanded=True):
+                            with st.container(border=True):
                                 new_title = st.text_input(
                                     "Title", value=asset["title"],
                                     key=f"ea_title_{asset['id']}"
@@ -1988,17 +2084,32 @@ def _generate_pdf(fundraiser: dict) -> bytes:
     return bytes(pdf.output())
 
 
-with st.expander("📥 Export to PDF", expanded=False):
-    st.caption("Download a PDF snapshot of this proposal at its current stage.")
-    pdf_bytes = _generate_pdf(fr)
-    if pdf_bytes:
-        fname = f"fundraiser_{fr['name'].replace(' ', '_')}.pdf"
-        st.download_button(
-            "⬇️ Download PDF", data=pdf_bytes, file_name=fname,
-            mime="application/pdf",
-        )
-    else:
-        st.caption("PDF export is not available on this deployment.")
+_pdf_key = "sh_pdf_open"
+if _pdf_key not in st.session_state:
+    st.session_state[_pdf_key] = False
+
+col_btn, _ = st.columns([1, 3])
+with col_btn:
+    if st.button(
+        "✕ Cancel" if st.session_state[_pdf_key] else "📥 Export to PDF",
+        key="sh_toggle_pdf",
+        use_container_width=True,
+    ):
+        st.session_state[_pdf_key] = not st.session_state[_pdf_key]
+        st.rerun()
+
+if st.session_state[_pdf_key]:
+    with st.container(border=True):
+        st.caption("Download a PDF snapshot of this proposal at its current stage.")
+        pdf_bytes = _generate_pdf(fr)
+        if pdf_bytes:
+            fname = f"fundraiser_{fr['name'].replace(' ', '_')}.pdf"
+            st.download_button(
+                "⬇️ Download PDF", data=pdf_bytes, file_name=fname,
+                mime="application/pdf",
+            )
+        else:
+            st.caption("PDF export is not available on this deployment.")
 
 
 st.divider()

@@ -48,8 +48,18 @@ ALTER TABLE fundraiser_assets ENABLE ROW LEVEL SECURITY;
 
 -- Permissive RLS: anyone who can see the parent fundraiser can see its assets.
 -- Tighten per-environment as needed.
-CREATE POLICY IF NOT EXISTS "fundraiser_assets_all" ON fundraiser_assets
-    USING (true) WITH CHECK (true);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename  = 'fundraiser_assets'
+          AND policyname = 'fundraiser_assets_all'
+    ) THEN
+        CREATE POLICY "fundraiser_assets_all" ON fundraiser_assets
+            USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 
 -- ── IMPORTANT: Supabase Storage bucket ────────────────────────────────────
 -- Create a PUBLIC bucket named exactly "fundraiser-assets" via:

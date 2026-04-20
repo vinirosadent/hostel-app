@@ -208,6 +208,7 @@ def create_fundraiser(*, name: str, created_by_id: str,
 
 _UPDATABLE_FIELDS = {
     "name", "objective", "beneficiary",
+    "proposal_prepared_by", "on_behalf_of",
     "rf_in_charge_id", "committee_chair_id",
     "marketing_start", "marketing_end",
     "ordering_start", "ordering_end",
@@ -239,6 +240,10 @@ def validate_for_submission(fr: dict) -> list[str]:
         errors.append("Project name is required.")
     if not (fr.get("objective") or "").strip():
         errors.append("Project description is required.")
+    if not (fr.get("proposal_prepared_by") or "").strip():
+        errors.append("Proposal prepared by is required.")
+    if not (fr.get("on_behalf_of") or "").strip():
+        errors.append("Committee/Activity (on behalf of) is required.")
     if not fr.get("delivery_date"):
         errors.append("Expected delivery / closing date is required.")
     for key, label in [

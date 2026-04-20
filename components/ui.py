@@ -138,6 +138,61 @@ def workflow_progress_bar(stages: list[dict]) -> str:
     return html
 
 
+def corporate_table(
+    columns: list[dict],
+    rows: list[dict],
+    empty_text: str = "No data",
+    row_actions_fn=None,
+) -> None:
+    """
+    Corporate-style data table rendered with st.columns + CSS classes.
+
+    columns: list of {key, label, flex=1, align="left"|"right"|"center", mono=False}
+    rows:    list of dicts whose keys match column "key" fields
+    row_actions_fn: callable(row) -> None — renders action buttons in the last column
+    """
+    flexes = [c.get("flex", 1) for c in columns]
+    has_actions = row_actions_fn is not None
+    all_flexes = flexes + ([1] if has_actions else [])
+
+    # ── Header row ──
+    h_cols = st.columns(all_flexes)
+    for i, col_spec in enumerate(columns):
+        align_cls = f" sh-ctable-{col_spec.get('align', 'left')}"
+        with h_cols[i]:
+            st.markdown(
+                f'<div class="sh-ctable-th{align_cls}">{col_spec["label"]}</div>',
+                unsafe_allow_html=True,
+            )
+    if has_actions:
+        with h_cols[-1]:
+            st.markdown('<div class="sh-ctable-th"></div>', unsafe_allow_html=True)
+
+    # ── Empty state ──
+    if not rows:
+        st.markdown(
+            f'<div class="sh-ctable-empty-row">{empty_text}</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Data rows ──
+    for row in rows:
+        d_cols = st.columns(all_flexes)
+        for i, col_spec in enumerate(columns):
+            val = row.get(col_spec["key"])
+            display = "—" if (val is None or val == "") else val
+            parts = ["sh-ctable-td", f'sh-ctable-{col_spec.get("align", "left")}']
+            if col_spec.get("mono"):
+                parts.append("sh-ctable-mono")
+            cls = " ".join(parts)
+            with d_cols[i]:
+                st.markdown(f'<div class="{cls}">{display}</div>', unsafe_allow_html=True)
+        if has_actions:
+            with d_cols[-1]:
+                row_actions_fn(row)
+
+
 def bucket_header(title: str, dot_class: str, count: int) -> None:
     st.markdown(
         f'<div class="sh-bucket-header">'

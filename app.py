@@ -121,6 +121,10 @@ else:
                     unsafe_allow_html=True,
                 )
                 if mod["available"] and mod["page"]:
+                    st.markdown(
+                        "<div style='height:0.3rem;'></div>",
+                        unsafe_allow_html=True,
+                    )
                     if st.button(
                         f"Open {mod['title']}",
                         key=f"mod_{mod['title']}",
