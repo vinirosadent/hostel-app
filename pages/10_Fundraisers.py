@@ -153,27 +153,27 @@ st.divider()
 # ---------- Render buckets ----------
 
 def _render_card(fr: dict):
-    """Compact fundraiser card — name + badge + truncated desc + Open button."""
     with st.container(border=True):
-        cols = st.columns([4, 1])
-        with cols[0]:
+        st.markdown(
+            f"<div style='font-weight:600;color:#0f172a;"
+            f"font-size:0.92rem;margin-bottom:0.2rem;"
+            f"word-wrap:break-word;overflow-wrap:break-word;'>"
+            f"{fr['name']}</div>",
+            unsafe_allow_html=True,
+        )
+        objective = (fr.get("objective") or "").strip()
+        if objective:
             st.markdown(
-                f"<div style='font-weight:600;color:#0f172a;"
-                f"font-size:0.95rem;margin-bottom:0.15rem;'>"
-                f"{fr['name']}</div>",
+                f"<div style='color:#64748b;font-size:0.78rem;"
+                f"line-height:1.4;margin-bottom:0.5rem;"
+                f"word-wrap:break-word;overflow-wrap:break-word;'>"
+                f"{objective}</div>",
                 unsafe_allow_html=True,
             )
-            objective = (fr.get("objective") or "").strip()
-            if objective:
-                preview = objective[:85] + ("…" if len(objective) > 85 else "")
-                st.markdown(
-                    f"<div style='color:#64748b;font-size:0.8rem;"
-                    f"line-height:1.35;margin-bottom:0.4rem;'>{preview}</div>",
-                    unsafe_allow_html=True,
-                )
+        col_badge, col_btn = st.columns([2, 1])
+        with col_badge:
             st.markdown(status_badge(fr["status"]), unsafe_allow_html=True)
-        with cols[1]:
-            st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+        with col_btn:
             if st.button("Open", key=f"open_{fr['id']}", use_container_width=True):
                 st.session_state["sh_selected_fundraiser"] = fr["id"]
                 st.switch_page("pages/11_Fundraiser_Detail.py")
