@@ -152,37 +152,32 @@ st.divider()
 
 # ---------- Render buckets ----------
 
-def _render_card(fr: dict):
+def _render_card(fr: dict) -> None:
+    """LIMS-style card — title, description (fixed height), status, Open btn."""
     with st.container(border=True):
         st.markdown(
-            f"<div style='font-weight:600;color:#0f172a;"
-            f"font-size:0.92rem;margin-bottom:0.2rem;"
-            f"word-wrap:break-word;overflow-wrap:break-word;'>"
-            f"{fr['name']}</div>",
+            f"<div class='sh-fcard-title'>{fr['name']}</div>",
             unsafe_allow_html=True,
         )
         objective = (fr.get("objective") or "").strip()
-        if objective:
-            st.markdown(
-                f"<div style='color:#64748b;font-size:0.78rem;"
-                f"line-height:1.4;margin-bottom:0.5rem;"
-                f"word-wrap:break-word;overflow-wrap:break-word;'>"
-                f"{objective}</div>",
-                unsafe_allow_html=True,
-            )
-        col_badge, col_btn = st.columns([2, 1])
-        with col_badge:
-            st.markdown(status_badge(fr["status"]), unsafe_allow_html=True)
-        with col_btn:
-            if st.button("Open", key=f"open_{fr['id']}", use_container_width=True):
-                st.session_state["sh_selected_fundraiser"] = fr["id"]
-                st.switch_page("pages/11_Fundraiser_Detail.py")
+        st.markdown(
+            f"<p class='sh-fcard-desc'>{objective or '<em style=\"color:#94a3b8;\">No description.</em>'}</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f"<div class='sh-fcard-badge-wrap'>{status_badge(fr['status'])}</div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Open", key=f"open_{fr['id']}",
+                     use_container_width=True, type="primary"):
+            st.session_state["sh_selected_fundraiser"] = fr["id"]
+            st.switch_page("pages/11_Fundraiser_Detail.py")
 
 
-def _render_bucket(title: str, frs: list[dict], empty_text: str):
+def _render_bucket(title: str, frs: list[dict], empty_text: str) -> None:
     st.markdown(
-        f"<div style='font-weight:600;font-size:0.95rem;color:#0f172a;"
-        f"margin:0.8rem 0 0.5rem 0;'>{title} "
+        f"<div style='font-weight:600;font-size:0.98rem;color:#0f172a;"
+        f"margin:1.2rem 0 0.6rem 0;'>{title} "
         f"<span style='color:#94a3b8;font-weight:500;'>({len(frs)})</span>"
         f"</div>",
         unsafe_allow_html=True,
@@ -190,11 +185,15 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str):
     if not frs:
         st.caption(empty_text)
         return
-    for i in range(0, len(frs), 2):
-        cols = st.columns(2)
-        for col, fr in zip(cols, frs[i:i + 2]):
+    for i in range(0, len(frs), 3):
+        cols = st.columns(3)
+        chunk = frs[i:i+3]
+        for col, fr in zip(cols, chunk):
             with col:
                 _render_card(fr)
+        for j in range(len(chunk), 3):
+            with cols[j]:
+                st.empty()
 
 
 _render_bucket("🟠 Drafts", buckets["drafts"],
