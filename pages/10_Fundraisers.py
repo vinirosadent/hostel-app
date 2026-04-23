@@ -179,7 +179,7 @@ def _render_card(fr: dict):
                 st.switch_page("pages/11_Fundraiser_Detail.py")
 
 
-def _render_bucket(title: str, frs: list[dict], empty_text: str):
+def _render_bucket(title: str, frs: list[dict], empty_text: str, n_cols: int = 3):
     st.markdown(
         f"<div style='font-weight:600;font-size:0.95rem;color:#0f172a;"
         f"margin:0.8rem 0 0.5rem 0;'>{title} "
@@ -190,9 +190,9 @@ def _render_bucket(title: str, frs: list[dict], empty_text: str):
     if not frs:
         st.caption(empty_text)
         return
-    for i in range(0, len(frs), 2):
-        cols = st.columns(2)
-        for col, fr in zip(cols, frs[i:i + 2]):
+    for i in range(0, len(frs), n_cols):
+        cols = st.columns(n_cols)
+        for col, fr in zip(cols, frs[i:i + n_cols]):
             with col:
                 _render_card(fr)
 

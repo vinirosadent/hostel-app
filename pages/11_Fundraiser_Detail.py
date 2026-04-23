@@ -63,11 +63,28 @@ def _parse_date(val: object) -> Optional[date]:
         return None
 
 
-def _reset_and_scroll(form_keys: list[str], success_msg: str) -> None:
+def _rerun_same_tab(tab_label: str) -> None:
+    """Rerun keeping the given tab label selected after the reload."""
+    st.session_state["sh_detail_active_tab"] = tab_label
+    st.rerun()
+
+
+def _reset_and_scroll(
+    form_keys: list[str],
+    success_msg: str,
+    *,
+    keep_tab: str | None = None,
+) -> None:
+    """Clear session keys, queue a success banner, optionally keep a tab active
+    after the rerun, and trigger a rerun. `keep_tab` should be one of the
+    labels passed to st.tabs — stored in session_state so the page can
+    re-select that tab after reload."""
     for k in form_keys:
         if k in st.session_state:
             del st.session_state[k]
     st.session_state["sh_action_msg"] = ("success", success_msg)
+    if keep_tab:
+        st.session_state["sh_detail_active_tab"] = keep_tab
     st.markdown(
         "<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>",
         unsafe_allow_html=True,
@@ -288,6 +305,34 @@ if _show_stock:    _ti += 1
 tab_report    = _all_tabs[_ti] if _show_report   else None
 if _show_report:   _ti += 1
 tab_purchaser = _all_tabs[_ti] if _show_purchaser else None
+
+# ── Restore the active tab after a rerun triggered by an internal action.
+# _reset_and_scroll(..., keep_tab="📦 Items") stores the desired label here;
+# we look up its current index (dependent on which optional tabs are shown)
+# and click the corresponding tab button once the page finishes loading.
+_keep_tab = st.session_state.pop("sh_detail_active_tab", None)
+if _keep_tab and _keep_tab in _tab_labels:
+    _keep_idx = _tab_labels.index(_keep_tab)
+    st.markdown(
+        f"""
+        <script>
+          (function() {{
+            const root = window.parent.document;
+            // Wait for the tablist to be in the DOM.
+            const trySelect = () => {{
+              const tabs = root.querySelectorAll('button[role="tab"]');
+              if (tabs && tabs.length > {_keep_idx}) {{
+                tabs[{_keep_idx}].click();
+              }} else {{
+                setTimeout(trySelect, 50);
+              }}
+            }};
+            trySelect();
+          }})();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -646,6 +691,7 @@ with tab_items:
                                      f"eqty_{_edit_item_id}", f"ecost_{_edit_item_id}",
                                      "sh_edit_item_id"],
                                     f"Item '{e_name.strip()}' saved.",
+                                    keep_tab="📦 Items",
                                 )
                             except Exception as ex:
                                 st.error(f"Save failed: {ex}")
@@ -653,7 +699,7 @@ with tab_items:
                     if st.button("Cancel", key=f"ecancel_{_edit_item_id}",
                                  use_container_width=True):
                         st.session_state.pop("sh_edit_item_id", None)
-                        st.rerun()
+                        _rerun_same_tab("📦 Items")
 
     def _item_actions(row: dict) -> None:
         ca, cb = st.columns(2)
@@ -661,12 +707,12 @@ with tab_items:
             if st.button("✏️", key=f"edit_item_{row['id']}",
                          use_container_width=True, help="Edit"):
                 st.session_state["sh_edit_item_id"] = row["id"]
-                st.rerun()
+                _rerun_same_tab("📦 Items")
         with cb:
             if st.button("🗑️", key=f"del_item_btn_{row['id']}",
                          use_container_width=True, help="Delete"):
                 st.session_state["sh_confirm_del_item"] = row["id"]
-                st.rerun()
+                _rerun_same_tab("📦 Items")
 
     # ── Section 1: Items for Sale ─────────────────────────────────────────
     st.markdown("### 🛍️ Items for Sale")
@@ -741,11 +787,14 @@ with tab_items:
                     new_qty = st.number_input("Quantity *", min_value=1, value=1,
                                                key="add_item_qty")
                 with ai4:
-                    new_cost = st.number_input("Unit Cost (SGD) *", min_value=0.0,
-                                                value=0.0, format="%.2f",
-                                                key="add_item_cost")
+                    new_cost = st.number_input(
+                        "Unit Cost (SGD) *",
+                        min_value=0.0, value=None, format="%.2f",
+                        placeholder="0.00",
+                        key="add_item_cost",
+                    )
 
-                calc = new_cost * new_qty
+                calc = (new_cost or 0.0) * new_qty
                 if calc > 0:
                     note = "  ⚠️ *Supplier quote required (total ≥ SGD 1,000)*" if calc >= 1000 else ""
                     st.info(f"Total Cost: **SGD {calc:.2f}**{note}")
@@ -755,6 +804,8 @@ with tab_items:
                     if st.button("✅ Confirm Add", type="primary", key="confirm_add_item"):
                         if not new_name.strip():
                             st.error("Item name is required.")
+                        elif new_cost is None:
+                            st.error("Unit cost is required.")
                         elif new_cost < 0:
                             st.error("Unit cost cannot be negative.")
                         else:
@@ -772,13 +823,14 @@ with tab_items:
                                     ["add_item_name", "add_item_supplier",
                                      "add_item_qty", "add_item_cost", "sh_adding_item"],
                                     f"Item '{new_name.strip()}' added.",
+                                    keep_tab="📦 Items",
                                 )
                             except Exception as ex:
                                 st.error(f"Could not add item: {ex}")
                 with cc2:
                     if st.button("Cancel", key="cancel_add_item"):
                         st.session_state.pop("sh_adding_item", None)
-                        st.rerun()
+                        _rerun_same_tab("📦 Items")
 
     # ── Section 2: Other Costs ────────────────────────────────────────────
     st.markdown("---")
@@ -835,7 +887,7 @@ with tab_items:
             type="secondary" if st.session_state.get("sh_adding_other") else "primary",
         ):
             st.session_state["sh_adding_other"] = not st.session_state.get("sh_adding_other", False)
-            st.rerun()
+            _rerun_same_tab("📦 Items")
 
         if st.session_state.get("sh_adding_other"):
             with st.container(border=True):
@@ -856,11 +908,13 @@ with tab_items:
                     )
                 with oa3:
                     new_o_cost = st.number_input(
-                        "Unit Cost (SGD) *", min_value=0.0, value=0.0,
-                        format="%.2f", key="add_other_cost",
+                        "Unit Cost (SGD) *",
+                        min_value=0.0, value=None, format="%.2f",
+                        placeholder="0.00",
+                        key="add_other_cost",
                     )
 
-                calc_o = new_o_cost * new_o_qty
+                calc_o = (new_o_cost or 0.0) * new_o_qty
                 if calc_o > 0:
                     st.info(f"Total Cost: **SGD {calc_o:.2f}**")
 
@@ -870,6 +924,8 @@ with tab_items:
                                  key="confirm_add_other"):
                         if not new_o_name.strip():
                             st.error("Description is required.")
+                        elif new_o_cost is None:
+                            st.error("Unit cost is required.")
                         elif new_o_cost < 0:
                             st.error("Unit cost cannot be negative.")
                         else:
@@ -887,13 +943,14 @@ with tab_items:
                                     ["add_other_name", "add_other_qty",
                                      "add_other_cost", "sh_adding_other"],
                                     f"Other cost '{new_o_name.strip()}' added.",
+                                    keep_tab="📦 Items",
                                 )
                             except Exception as ex:
                                 st.error(f"Could not add other cost: {ex}")
                 with oc2:
                     if st.button("Cancel", key="cancel_add_other"):
                         st.session_state.pop("sh_adding_other", None)
-                        st.rerun()
+                        _rerun_same_tab("📦 Items")
 
     # ── Delete confirmation (shared across both sections) ─────────────────
     _del_item_id = st.session_state.get("sh_confirm_del_item")
@@ -910,11 +967,11 @@ with tab_items:
                         delete_item(_del_item_id)
                         st.session_state.pop("sh_confirm_del_item", None)
                         st.session_state.pop("sh_edit_item_id", None)
-                        st.rerun()
+                        _rerun_same_tab("📦 Items")
                 with cb:
                     if st.button("Cancel", key=f"cancel_del_item_{_del_item_id}"):
                         st.session_state.pop("sh_confirm_del_item", None)
-                        st.rerun()
+                        _rerun_same_tab("📦 Items")
 
     # ── Grand total across both sections ──────────────────────────────────
     if _items_rows or _other_rows:
@@ -1010,6 +1067,7 @@ with tab_selling:
                                      f"eoptprice_{_edit_opt_id}",
                                      "sh_edit_opt_id"],
                                     f"Option '{e_opt_name.strip()}' saved.",
+                                    keep_tab="💰 Selling Options",
                                 )
                             except Exception as ex:
                                 st.error(f"Save failed: {ex}")
@@ -1017,7 +1075,7 @@ with tab_selling:
                     if st.button("Cancel", key=f"cancelopt_{_edit_opt_id}",
                                  use_container_width=True):
                         st.session_state.pop("sh_edit_opt_id", None)
-                        st.rerun()
+                        _rerun_same_tab("💰 Selling Options")
 
     # ── Corporate table ───────────────────────────────────────────────────
     _opts_cols = [
@@ -1059,12 +1117,12 @@ with tab_selling:
             if st.button("✏️", key=f"editopt_{row['id']}",
                          use_container_width=True, help="Edit"):
                 st.session_state["sh_edit_opt_id"] = row["id"]
-                st.rerun()
+                _rerun_same_tab("💰 Selling Options")
         with cb:
             if st.button("🗑️", key=f"delopt_btn_{row['id']}",
                          use_container_width=True, help="Delete"):
                 st.session_state["sh_confirm_del_opt"] = row["id"]
-                st.rerun()
+                _rerun_same_tab("💰 Selling Options")
 
     corporate_table(
         _opts_cols,
@@ -1089,11 +1147,11 @@ with tab_selling:
                                  type="primary"):
                         delete_selling_option(_del_opt_id)
                         st.session_state.pop("sh_confirm_del_opt", None)
-                        st.rerun()
+                        _rerun_same_tab("💰 Selling Options")
                 with db:
                     if st.button("Cancel", key=f"cancel_del_opt_{_del_opt_id}"):
                         st.session_state.pop("sh_confirm_del_opt", None)
-                        st.rerun()
+                        _rerun_same_tab("💰 Selling Options")
 
     if options:
         st.markdown("---")
@@ -1144,10 +1202,12 @@ with tab_selling:
 
                     st.markdown(f"Unit Cost (from purchase): **SGD {uc_single:.2f}**")
                     so_sell = st.number_input(
-                        "Selling Price before GST (SGD) *", min_value=0.0, value=0.0,
-                        format="%.2f", key="so_single_price",
+                        "Selling Price before GST (SGD) *",
+                        min_value=0.0, value=None, format="%.2f",
+                        placeholder="0.00",
+                        key="so_single_price",
                     )
-                    if so_sell > 0:
+                    if so_sell and so_sell > 0:
                         p_s = so_sell - uc_single
                         p_pct_s = (p_s / uc_single * 100) if uc_single > 0 else 0
                         final_s = so_sell * (1 + GST_RATE)
@@ -1167,7 +1227,7 @@ with tab_selling:
                     with c_add:
                         if st.button("✅ Confirm — Add Single Option", type="primary",
                                      key="so_single_submit"):
-                            if so_sell <= 0:
+                            if not so_sell or so_sell <= 0:
                                 st.error("Selling price must be greater than zero.")
                             else:
                                 try:
@@ -1181,6 +1241,7 @@ with tab_selling:
                                         ["so_single_item", "so_single_price",
                                          "so_single_name", "so_type_radio"],
                                         f"Option '{(so_name_s or auto_name_s).strip()}' added.",
+                                        keep_tab="💰 Selling Options",
                                     )
                                 except (ValidationError, Exception) as ex:
                                     st.error(f"Error: {ex}")
@@ -1215,9 +1276,11 @@ with tab_selling:
                     )
                     so_sell_c = st.number_input(
                         "Combo Selling Price before GST (SGD) *",
-                        min_value=0.0, value=0.0, format="%.2f", key="so_combo_price",
+                        min_value=0.0, value=None, format="%.2f",
+                        placeholder="0.00",
+                        key="so_combo_price",
                     )
-                    if so_sell_c > 0 and combo_cost > 0:
+                    if so_sell_c and so_sell_c > 0 and combo_cost > 0:
                         p_c = so_sell_c - combo_cost
                         p_pct_c = (p_c / combo_cost * 100) if combo_cost > 0 else 0
                         final_c = so_sell_c * (1 + GST_RATE)
@@ -1237,7 +1300,7 @@ with tab_selling:
                                 st.error("A combo must include at least 2 different items.")
                             elif not so_name_c.strip():
                                 st.error("Combo name is required.")
-                            elif so_sell_c <= 0:
+                            elif not so_sell_c or so_sell_c <= 0:
                                 st.error("Selling price must be greater than zero.")
                             else:
                                 try:
@@ -1251,6 +1314,7 @@ with tab_selling:
                                         ["so_combo_items", "so_combo_name",
                                          "so_combo_price", "so_type_radio"],
                                         f"Combo '{so_name_c.strip()}' added.",
+                                        keep_tab="💰 Selling Options",
                                     )
                                 except (ValidationError, Exception) as ex:
                                     st.error(f"Error: {ex}")
@@ -2131,11 +2195,19 @@ with action_cols[4]:
 st.divider()
 
 
+class _PDFLibMissing(Exception):
+    pass
+
+
 def _generate_pdf(fundraiser: dict) -> bytes:
     try:
         from fpdf import FPDF
-    except ImportError:
-        return b""
+    except ImportError as exc:
+        raise _PDFLibMissing(
+            "The PDF export dependency `fpdf2` is not installed on this "
+            "deployment. Run `pip install fpdf2>=2.7.0` (or rebuild the "
+            "environment from requirements.txt) and restart the app."
+        ) from exc
 
     items_data = list_items(fr_id)
     opts_data = list_selling_options(fr_id)
@@ -2339,15 +2411,20 @@ with col_btn:
 if st.session_state[_pdf_key]:
     with st.container(border=True):
         st.caption("Download a PDF snapshot of this proposal at its current stage.")
-        pdf_bytes = _generate_pdf(fr)
+        try:
+            pdf_bytes = _generate_pdf(fr)
+        except _PDFLibMissing as exc:
+            st.error(str(exc))
+            pdf_bytes = b""
+        except Exception as exc:
+            st.error(f"Could not generate PDF: {exc}")
+            pdf_bytes = b""
         if pdf_bytes:
             fname = f"fundraiser_{fr['name'].replace(' ', '_')}.pdf"
             st.download_button(
                 "⬇️ Download PDF", data=pdf_bytes, file_name=fname,
                 mime="application/pdf",
             )
-        else:
-            st.caption("PDF export is not available on this deployment.")
 
 
 st.divider()
