@@ -101,7 +101,10 @@ visible = [m for m in MODULES if _can(m["roles"])]
 if not visible:
     st.info("No modules available. Ask the Hall Master to assign you to a fundraiser.")
 else:
-    n_cols = 2
+    # 3 columns × N rows. Modules that are not yet available still occupy
+    # their slot (grayed out via the "soon" badge) so the grid stays dense
+    # and cards line up instead of leaving a wide empty band to the right.
+    n_cols = 3
     for row_start in range(0, len(visible), n_cols):
         row = visible[row_start:row_start + n_cols]
         cols = st.columns(n_cols)
