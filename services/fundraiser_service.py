@@ -172,6 +172,8 @@ def status_rank(s: str) -> int:
 @dataclass
 class FinancialSummary:
     total_cost:               Decimal = Decimal("0")
+    items_cost:               Decimal = Decimal("0")
+    other_costs:              Decimal = Decimal("0")
     gross_revenue_before_gst: Decimal = Decimal("0")
     gst_collected:            Decimal = Decimal("0")
     total_customer_payment:   Decimal = Decimal("0")
@@ -356,11 +358,21 @@ def transition_status(fundraiser_id: str, new_status: str,
 
 # ── Items ────────────────────────────────────────────────────────────────────
 
-def list_items(fundraiser_id: str) -> list[dict]:
+VALID_ITEM_KINDS = ("sale", "other_cost")
+
+
+def list_items(fundraiser_id: str, *, kind: str | None = None) -> list[dict]:
+    """List items. If kind is provided, only return items of that kind."""
     sb = get_supabase()
-    return sb.table("fundraiser_items").select("*").eq(
-        "fundraiser_id", fundraiser_id
-    ).order("item_code").execute().data or []
+    q = sb.table("fundraiser_items").select("*").eq("fundraiser_id", fundraiser_id)
+    if kind is not None:
+        q = q.eq("item_kind", kind)
+    rows = q.order("item_code").execute().data or []
+    # Backfill item_kind for rows created before migration 017 so callers
+    # can rely on the field being present in every dict.
+    for r in rows:
+        r.setdefault("item_kind", "sale")
+    return rows
 
 
 def upsert_item(fundraiser_id: str, item_code: str, *,
@@ -368,7 +380,12 @@ def upsert_item(fundraiser_id: str, item_code: str, *,
                 supplier: str | None = None,
                 quantity: int = 0,
                 unit_cost: float = 0.0,
-                notes: str | None = None) -> dict:
+                notes: str | None = None,
+                item_kind: str = "sale") -> dict:
+    if item_kind not in VALID_ITEM_KINDS:
+        raise ValidationError(
+            f"item_kind must be one of {VALID_ITEM_KINDS}."
+        )
     if not item_code.strip():
         raise ValidationError("Item code is required.")
     if quantity <= 0:
@@ -377,7 +394,11 @@ def upsert_item(fundraiser_id: str, item_code: str, *,
         raise ValidationError("Unit cost must be non-negative.")
     sb = get_supabase()
     threshold = float(get_quote_threshold())
-    requires_quote = (quantity * unit_cost) >= threshold
+    # Other costs do not trigger the supplier-quote flag — quote threshold
+    # is a procurement control for physical goods being sold.
+    requires_quote = (
+        item_kind == "sale" and (quantity * unit_cost) >= threshold
+    )
     payload = {
         "fundraiser_id": fundraiser_id,
         "item_code": item_code.strip().upper(),
@@ -387,6 +408,7 @@ def upsert_item(fundraiser_id: str, item_code: str, *,
         "unit_cost": float(unit_cost),
         "requires_quote": requires_quote,
         "notes": notes,
+        "item_kind": item_kind,
     }
     res = sb.table("fundraiser_items").upsert(
         payload, on_conflict="fundraiser_id,item_code"
@@ -410,7 +432,13 @@ def list_selling_options(fundraiser_id: str) -> list[dict]:
 def _compute_unit_cost_from_composition(
     composition: dict[str, int], items: list[dict]
 ) -> Decimal:
-    by_code = {it["item_code"]: Decimal(str(it["unit_cost"])) for it in items}
+    # Only sale items may appear in selling option compositions; other costs
+    # (delivery, design, printing, etc.) never become part of a product sold.
+    by_code = {
+        it["item_code"]: Decimal(str(it["unit_cost"]))
+        for it in items
+        if it.get("item_kind", "sale") == "sale"
+    }
     total = Decimal("0")
     for code, qty in composition.items():
         if code not in by_code:
@@ -497,7 +525,12 @@ def upsert_stock_movement(fundraiser_id: str, selling_option_id: str,
 
 
 def compute_stock_reconciliation(fundraiser_id: str) -> list[StockRow]:
-    items = {it["item_code"]: it for it in list_items(fundraiser_id)}
+    # Only sale items carry stock; other costs (delivery, printing, etc.)
+    # are not inventory and are excluded from reconciliation.
+    items = {
+        it["item_code"]: it
+        for it in list_items(fundraiser_id, kind="sale")
+    }
     options = {o["id"]: o for o in list_selling_options(fundraiser_id)}
     movements = list_stock_movements(fundraiser_id)
     rows: dict[str, StockRow] = {
@@ -521,17 +554,30 @@ def compute_stock_reconciliation(fundraiser_id: str) -> list[StockRow]:
 
 
 def compute_financial_summary(fundraiser_id: str) -> FinancialSummary:
-    items = list_items(fundraiser_id)
+    all_items = list_items(fundraiser_id)
+    sale_items = [it for it in all_items if it.get("item_kind", "sale") == "sale"]
+    other_items = [it for it in all_items if it.get("item_kind") == "other_cost"]
     options = list_selling_options(fundraiser_id)
     movements = {
         m["selling_option_id"]: int(m["quantity_sold"])
         for m in list_stock_movements(fundraiser_id)
     }
-    total_cost = sum(
-        (Decimal(str(it["unit_cost"])) * Decimal(str(it["quantity"])) for it in items),
+    items_cost = sum(
+        (Decimal(str(it["unit_cost"])) * Decimal(str(it["quantity"]))
+         for it in sale_items),
         Decimal("0"),
     )
-    purchased_by_code = {it["item_code"]: int(it["quantity"]) for it in items}
+    other_costs = sum(
+        (Decimal(str(it["unit_cost"])) * Decimal(str(it["quantity"]))
+         for it in other_items),
+        Decimal("0"),
+    )
+    total_cost = items_cost + other_costs
+    # max_possible_revenue is bounded by what was purchased for SALE —
+    # other-cost items are not products, so they do not constrain it.
+    purchased_by_code = {
+        it["item_code"]: int(it["quantity"]) for it in sale_items
+    }
     max_rev = Decimal("0")
     for opt in options:
         comp = opt.get("composition") or {}
@@ -556,10 +602,13 @@ def compute_financial_summary(fundraiser_id: str) -> FinancialSummary:
     gst_rate = get_gst_rate()
     gst_collected = gross_rev * gst_rate
     total_customer_payment = gross_rev + gst_collected
+    # Gross Profit = revenue − ALL committee expenses (items + other costs)
     gross_profit = gross_rev - total_cost
 
     return FinancialSummary(
         total_cost=total_cost,
+        items_cost=items_cost,
+        other_costs=other_costs,
         gross_revenue_before_gst=gross_rev,
         gst_collected=gst_collected,
         total_customer_payment=total_customer_payment,
