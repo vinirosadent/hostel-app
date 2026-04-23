@@ -4,6 +4,10 @@ Este arquivo orienta o Claude Code sobre o projeto SHApp, o jeito como ele deve
 trabalhar, e as convenções que Vinicius (o dono do projeto) espera. Leia antes
 de qualquer tarefa.
 
+**Ao abrir qualquer sessão nova, você DEVE também ler `progress/CURRENT.md`
+se ele existir** — esse arquivo contém o estado da última sessão de trabalho
+e é essencial para continuidade entre sessões. Veja Regra 11.
+
 Se depois de ler isto ainda faltar contexto sobre o funcionamento do hostel em
 si (vocabulário interno, detalhes operacionais), consulte também
 `hostel_context.txt` na raiz.
@@ -43,7 +47,7 @@ migrations, e mexidas em autenticação/permissões exigem cuidado especial.
 | `migrations/`       | Scripts de migração de schema do banco. Numeração sequencial importa |
 | `scripts/`          | Utilitários avulsos (seeds, tarefas pontuais, manutenção) |
 | `tests/`            | Testes automatizados (pytest) |
-| `progress/`         | Notas de desenvolvimento, changelog informal |
+| `progress/`         | Notas de progresso entre sessões. Ver Regra 11 |
 | `static/`           | Assets estáticos (imagens, CSS customizado) |
 | `.streamlit/`       | Configuração do Streamlit (tema, `secrets.toml` para dev local) |
 | `hostel_context.txt`| Contexto de negócio do hostel (complementar a este arquivo) |
@@ -99,6 +103,7 @@ estar visíveis com suas datas reais.
 | Interface do usuário (textos visíveis no app) | Português |
 | Comentários no código | Português quando explicam lógica de negócio do hostel; inglês para comentários técnicos genéricos |
 | Conversa com Vinicius | Português |
+| Conteúdo dos arquivos em `progress/` | Português |
 
 ## 7. Estilo visual e UX
 
@@ -148,9 +153,10 @@ silencioso.
 
 Antes da PRIMEIRA edição de código em qualquer sessão nova, você DEVE:
 
-1. Confirmar em **uma ou duas frases** o que você entendeu do pedido.
-2. Fazer pergunta(s) se algo estiver ambíguo.
-3. Aguardar resposta de Vinicius.
+1. Ler o `progress/CURRENT.md` (se existir) e reportar o estado atual
+2. Confirmar em **uma ou duas frases** o que você entendeu do pedido
+3. Fazer pergunta(s) se algo estiver ambíguo
+4. Aguardar resposta de Vinicius
 
 **Nunca** comece uma sessão editando arquivos direto, mesmo que o pedido pareça
 óbvio. O custo de um turno extra de conversa é trivial; o custo de fazer a
@@ -201,12 +207,9 @@ trabalho, não uma falha de obediência.
   índice na coluna X. Quer que eu crie a migration do índice junto?"
 - "Students poderiam ver fundraisers de outros Students com essa mudança de
   RLS. É isso mesmo que você quer?"
-- "A lógica que você descreveu funciona, mas existe uma função pronta em
-  `services/auth.py` que faz isso — posso usar ela em vez de escrever nova?"
 
 **Importante:** não seja obstrutivo. Se o pedido estiver razoável e bem
-pensado, não invente problemas imaginários só para parecer crítico. O
-contra-argumento é para quando há problema real.
+pensado, não invente problemas imaginários só para parecer crítico.
 
 ### Regra 3 — Plano obrigatório em mudanças grandes
 
@@ -262,7 +265,7 @@ esse 'Arrow' que aparece na tela" — aí pode ir direto).
 
 ### Regra 7 — Pausas obrigatórias para ações externas
 
-**Esta é a regra mais crítica de todas.** Você opera em uma sandbox isolada
+**Esta é uma das regras mais críticas.** Você opera em uma sandbox isolada
 que NÃO tem acesso ao Supabase de produção, ao painel do Streamlit Community
 Cloud, ao DNS, ou a qualquer sistema externo controlado por Vinicius.
 
@@ -275,6 +278,8 @@ Cloud, trocar configuração na conta GitHub, etc.), você DEVE:
 2. **Avisar em texto destacado** exatamente o que Vinicius precisa fazer
 3. **Pedir o retorno/resultado** da ação (mensagem de sucesso, erro, output)
 4. **Não continuar** até ele colar o retorno aqui
+5. **Atualizar `progress/CURRENT.md`** registrando que está pausado
+   aguardando ação externa (ver Regra 11)
 
 **Formato obrigatório:**
 
@@ -312,23 +317,131 @@ Você DEVE pedir confirmação explícita antes de:
 - Evite jargão técnico desnecessário. Se precisar explicar algo técnico,
   explique como explicaria a um pesquisador biomédico que programa há pouco
   tempo.
-- Mensagens de commit em inglês, código em inglês, interface em português
-  (conforme seção 6).
+- Mensagens de commit em inglês, código em inglês, interface em português.
 
 ### Regra 10 — Referências implícitas
 
 "Faz que nem antes", "como você fez da última vez", "igual fizemos":
 
-1. Olhe commits recentes e `progress/` procurando precedente
+1. Olhe commits recentes, `progress/CURRENT.md`, e `progress/ARCHIVE/`
+   procurando precedente
 2. Se achar, siga-o explicitando em sua resposta qual referência está usando
 3. Se não achar, PERGUNTE qual referência Vinicius tem em mente antes de
    chutar
 
+### Regra 11 — Arquivo de progresso (continuidade entre sessões)
+
+**Esta é a regra que garante que nada se perca entre uma sessão e outra.**
+
+Claude Code não tem memória persistente entre sessões. Para resolver isso,
+você DEVE manter um arquivo `progress/CURRENT.md` sempre atualizado com o
+estado do trabalho em andamento. Quando uma tarefa é concluída por completo,
+o arquivo é arquivado em `progress/ARCHIVE/` com a data, e um novo
+`CURRENT.md` em branco (ou com o próximo trabalho) é criado.
+
+#### Ao ABRIR uma sessão nova
+
+**Antes de qualquer coisa**, você DEVE:
+
+1. Ler `progress/CURRENT.md` (se existir)
+2. Resumir em português para Vinicius o estado que encontrou:
+   - Qual é o pedido original
+   - O que já foi feito
+   - O que falta fazer
+   - Se está pausado aguardando algo (ex.: ação no Supabase)
+3. Perguntar: *"Quer continuar daqui ou mudamos de direção?"*
+
+Se o `CURRENT.md` não existir ou estiver vazio, informe *"Não há trabalho em
+andamento registrado, vamos começar do zero"* e siga a conversa normal.
+
+#### Durante a sessão
+
+Atualize `progress/CURRENT.md` nos seguintes momentos:
+
+- **Ao receber um pedido com múltiplos itens:** registre todos os itens como
+  checklist, marque o que está em andamento
+- **Ao concluir cada item:** marque como feito, com número do PR ou commit
+- **Ao pausar aguardando ação externa** (Regra 7): registre o estado de
+  pausa, o que está esperando, e o que fazer quando receber o retorno
+- **Ao terminar uma resposta** onde houve progresso significativo: atualiza
+
+Commit da atualização do `CURRENT.md` junto com o trabalho daquela etapa.
+Não precisa de PR separado para isso — vai junto no mesmo commit do código.
+
+#### Formato do `progress/CURRENT.md`
+
+Use este template:
+
+```markdown
+# Trabalho em andamento
+
+**Última atualização:** [data e hora aproximadas]
+**Status:** [em andamento / pausado aguardando Vinicius / concluído]
+
+## Pedido original
+
+[Resumo do que Vinicius pediu, em 2-3 frases]
+
+## Checklist
+
+- [x] Item 1 — descrição curta (PR #XX mergeado em [data])
+- [x] Item 2 — descrição curta (PR #XX mergeado em [data])
+- [ ] Item 3 — descrição curta (em andamento / não iniciado)
+- [ ] Item 4 — descrição curta (não iniciado)
+
+## Decisões tomadas no caminho
+
+- [Decisão importante 1 e porquê]
+- [Decisão importante 2 e porquê]
+
+## Dúvidas pendentes
+
+- [Dúvida 1] — aguardando resposta de Vinicius
+- [Dúvida 2] — aguardando resposta de Vinicius
+
+## Próximo passo concreto
+
+[O que fazer assim que retomar, em uma ou duas frases. Ser específico:
+"editar pages/fundraisers.py na função render_card()" é melhor que
+"continuar os cards"]
+
+## Pausado aguardando ação externa? (se aplicável)
+
+- **Ação que Vinicius precisa fazer:** [descrição]
+- **Retorno que estou esperando:** [o que ele deve me colar de volta]
+- **Quando ele colar:** [o que vou fazer com esse retorno]
+```
+
+#### Ao CONCLUIR uma tarefa por completo
+
+Quando todos os itens de um pedido forem concluídos:
+
+1. Mova o arquivo atual para `progress/ARCHIVE/YYYY-MM-DD_nome-tarefa.md`
+   (use o padrão de data ISO)
+2. Crie um novo `progress/CURRENT.md` vazio ou com o próximo pedido
+3. Commit com mensagem: `docs: archive progress for [nome da tarefa]`
+
+O arquivo `progress/ARCHIVE/` vira a memória histórica do projeto — útil para
+Vinicius revisar o que foi feito, e para você consultar quando ele fizer
+referências tipo "faz como fizemos da última vez".
+
+#### Se Vinicius pedir "me dê em passos para fazer depois"
+
+Quando ele pedir explicitamente um plano para pausar, você DEVE:
+
+1. Escrever o plano completo em passos numerados em `progress/CURRENT.md`
+2. **Não executar nada**
+3. Confirmar para Vinicius: *"Plano salvo em progress/CURRENT.md. Quando
+   quiser retomar, abre uma sessão nova e manda 'continuar' — eu leio o
+   arquivo e sigo."*
+
+Isso garante que ele pode ir dormir e retomar no dia seguinte sem perder nada.
+
 ---
 
-**Em uma frase:** o fluxo padrão é *entender → questionar se faz sentido →
-planejar → confirmar → executar com pausas quando precisar que Vinicius aja
-fora da sandbox*. Nunca *executar → mostrar*.
+**Em uma frase:** o fluxo padrão é *ler progress → entender → questionar se
+faz sentido → planejar → confirmar → executar com pausas → atualizar
+progress*. Nunca *executar → mostrar*.
 
 ---
 
@@ -365,17 +478,21 @@ fora da sandbox*. Nunca *executar → mostrar*.
   abra dois PRs.
 - No corpo do PR, resuma **o que mudou** e **por quê**, em português ou
   inglês (Vinicius lê os dois).
+- Commits que só atualizam `progress/CURRENT.md` podem ir direto na main
+  sem PR.
 
 ## 13. Quando estiver em dúvida
 
 Na seguinte ordem:
 
-1. **Leia mais código.** Procure precedente em `pages/`, `components/`,
+1. **Leia o `progress/CURRENT.md`** se a dúvida é sobre continuidade
+2. **Leia mais código.** Procure precedente em `pages/`, `components/`,
    `services/`. A resposta costuma já estar lá.
-2. **Leia o `hostel_context.txt`** se a dúvida for de negócio.
-3. **Pergunte ao Vinicius** — em português, de forma objetiva, idealmente
-   com uma sugestão concreta já preparada ("vou fazer X assim, concorda?").
-4. **Não chute silenciosamente.** Melhor perguntar do que introduzir lógica
+3. **Leia `progress/ARCHIVE/`** se a dúvida é sobre "como fizemos antes"
+4. **Leia `hostel_context.txt`** se a dúvida for de negócio
+5. **Pergunte ao Vinicius** — em português, de forma objetiva, idealmente
+   com uma sugestão concreta já preparada ("vou fazer X assim, concorda?")
+6. **Não chute silenciosamente.** Melhor perguntar do que introduzir lógica
    inconsistente com o resto do app.
 
 ---
@@ -443,9 +560,10 @@ Usa o formato da Regra 7:
 
 **Passo C — Após o retorno de Vinicius**
 
-- Se sucesso: continua com o próximo passo do plano
-- Se erro: analisa a mensagem, propõe correção, e gera uma PAUSA nova para
-  reexecutar
+- Se sucesso: continua com o próximo passo do plano, e atualiza
+  `progress/CURRENT.md`
+- Se erro: analisa a mensagem, propõe correção, gera PAUSA nova para
+  reexecutar, e atualiza `progress/CURRENT.md` registrando o erro
 
 ### Queries ad-hoc de análise ou correção
 
@@ -473,9 +591,6 @@ errado"*, você entrega a query SQL direta (não vira migration), mas:
 > ⏸️ **PAUSA:** cola aqui quantas linhas voltaram e quais são. Se estiverem
 > corretas, te mando o UPDATE. Se não, a gente ajusta o WHERE antes.
 
-Isso protege contra o desastre clássico de `UPDATE` ou `DELETE` sem `WHERE`
-adequado — um erro quase irrecuperável em banco de produção.
-
 ### Padrões técnicos do Supabase neste projeto
 
 - **Row Level Security (RLS)** deve estar ativo em qualquer tabela nova. Se
@@ -496,12 +611,14 @@ adequado — um erro quase irrecuperável em banco de produção.
 
 Quando em dúvida sobre como agir, lembre:
 
-1. **Sempre texto antes de código** na primeira resposta de cada sessão
-2. **Questione o pedido** se achar problema real (Regra 2 — modo sênior)
-3. **Plano em mudanças grandes**, diff em mudanças pequenas, antes de aplicar
-4. **Uma coisa por vez** em tarefas múltiplas
-5. **Duas opções** em pedidos estéticos subjetivos
-6. **PAUSA OBRIGATÓRIA** antes de qualquer passo que dependa de ação de
-   Vinicius fora da sandbox (Supabase, Streamlit Cloud, GitHub, etc.)
-7. **SELECT antes de UPDATE/DELETE**, sempre, sem exceção
-8. **Nunca assumir** que migrations foram aplicadas — esperar retorno
+1. **Primeiro leia `progress/CURRENT.md`** ao abrir sessão nova
+2. **Sempre texto antes de código** na primeira resposta
+3. **Questione o pedido** se achar problema real (modo colega sênior)
+4. **Plano em mudanças grandes**, diff em mudanças pequenas, antes de aplicar
+5. **Uma coisa por vez** em tarefas múltiplas
+6. **Duas opções** em pedidos estéticos subjetivos
+7. **PAUSA OBRIGATÓRIA** antes de ação de Vinicius fora da sandbox
+8. **SELECT antes de UPDATE/DELETE**, sempre, sem exceção
+9. **Nunca assumir** que migrations foram aplicadas — esperar retorno
+10. **Atualizar `progress/CURRENT.md`** ao pausar, ao mudar de item, ao
+    concluir
