@@ -553,7 +553,12 @@ with tab_committee:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_items:
-    items = list_items(fr_id)
+    all_items = list_items(fr_id)
+    sale_items = [it for it in all_items if it.get("item_kind", "sale") == "sale"]
+    other_items = [it for it in all_items if it.get("item_kind") == "other_cost"]
+    # Items passed to the edit/delete lookup must include every row, because
+    # the UI identifies entries by id regardless of which section they live in.
+    items = all_items
 
     def _next_code(existing: list[dict]) -> str:
         taken = {it["item_code"] for it in existing}
@@ -566,34 +571,59 @@ with tab_items:
                     return c1 + c2
         return "X"
 
-    # ── Inline edit form (shown above table when editing) ─────────────────
+    # ── Inline edit form (shown above the relevant table when editing) ────
     _edit_item_id = st.session_state.get("sh_edit_item_id")
     if _edit_item_id and can_edit_proposal:
         _edit_it = next((it for it in items if it["id"] == _edit_item_id), None)
         if _edit_it:
+            _edit_kind = _edit_it.get("item_kind", "sale")
             _ename_d = _edit_it.get("item_name") or _edit_it["item_code"]
             _euc = float(_edit_it["unit_cost"])
             _eqty = int(_edit_it["quantity"])
             with st.container(border=True):
-                st.markdown(f"**Edit Item — {_ename_d}**")
-                ec1, ec2, ec3, ec4 = st.columns([3, 2, 2, 2])
-                with ec1:
-                    e_name = st.text_input("Item name", value=_ename_d,
-                                           key=f"ename_{_edit_item_id}")
-                with ec2:
-                    e_supp = st.text_input("Supplier",
-                                           value=_edit_it.get("supplier") or "",
-                                           key=f"esupp_{_edit_item_id}")
-                with ec3:
-                    e_qty = st.number_input("Quantity", value=_eqty, min_value=1,
-                                            key=f"eqty_{_edit_item_id}")
-                with ec4:
-                    e_cost = st.number_input("Unit Cost (SGD)", value=_euc,
-                                              min_value=0.0, format="%.2f",
-                                              key=f"ecost_{_edit_item_id}")
-                e_total = e_cost * e_qty
-                quote_note = "  ⚠️ *Quote required (total ≥ SGD 1,000)*" if e_total >= 1000 else ""
-                st.info(f"Total Cost: **SGD {e_total:,.2f}**{quote_note}")
+                if _edit_kind == "other_cost":
+                    st.markdown(f"**Edit Other Cost — {_ename_d}**")
+                    ec1, ec2, ec3 = st.columns([4, 2, 2])
+                    with ec1:
+                        e_name = st.text_input(
+                            "Description", value=_ename_d,
+                            key=f"ename_{_edit_item_id}",
+                        )
+                    with ec2:
+                        e_qty = st.number_input(
+                            "Quantity", value=_eqty, min_value=1,
+                            key=f"eqty_{_edit_item_id}",
+                        )
+                    with ec3:
+                        e_cost = st.number_input(
+                            "Unit Cost (SGD)", value=_euc, min_value=0.0,
+                            format="%.2f", key=f"ecost_{_edit_item_id}",
+                        )
+                    e_supp_val: str | None = None
+                    e_total = e_cost * e_qty
+                    st.info(f"Total Cost: **SGD {e_total:,.2f}**")
+                else:
+                    st.markdown(f"**Edit Item — {_ename_d}**")
+                    ec1, ec2, ec3, ec4 = st.columns([3, 2, 2, 2])
+                    with ec1:
+                        e_name = st.text_input("Item name", value=_ename_d,
+                                               key=f"ename_{_edit_item_id}")
+                    with ec2:
+                        e_supp_val = st.text_input(
+                            "Supplier",
+                            value=_edit_it.get("supplier") or "",
+                            key=f"esupp_{_edit_item_id}",
+                        )
+                    with ec3:
+                        e_qty = st.number_input("Quantity", value=_eqty, min_value=1,
+                                                key=f"eqty_{_edit_item_id}")
+                    with ec4:
+                        e_cost = st.number_input("Unit Cost (SGD)", value=_euc,
+                                                  min_value=0.0, format="%.2f",
+                                                  key=f"ecost_{_edit_item_id}")
+                    e_total = e_cost * e_qty
+                    quote_note = "  ⚠️ *Quote required (total ≥ SGD 1,000)*" if e_total >= 1000 else ""
+                    st.info(f"Total Cost: **SGD {e_total:,.2f}**{quote_note}")
                 cs, cc = st.columns(2)
                 with cs:
                     if st.button("✅ Confirm", key=f"esave_{_edit_item_id}",
@@ -605,9 +635,11 @@ with tab_items:
                                 upsert_item(
                                     fr_id, _edit_it["item_code"],
                                     item_name=e_name.strip(),
-                                    supplier=e_supp.strip() or None,
+                                    supplier=(e_supp_val or "").strip() or None
+                                    if _edit_kind == "sale" else None,
                                     quantity=int(e_qty),
                                     unit_cost=float(e_cost),
+                                    item_kind=_edit_kind,
                                 )
                                 _reset_and_scroll(
                                     [f"ename_{_edit_item_id}", f"esupp_{_edit_item_id}",
@@ -623,35 +655,6 @@ with tab_items:
                         st.session_state.pop("sh_edit_item_id", None)
                         st.rerun()
 
-    # ── Corporate table ───────────────────────────────────────────────────
-    _items_cols = [
-        {"key": "item_code",    "label": "Code",            "flex": 1, "mono": True},
-        {"key": "item_name",    "label": "Name",            "flex": 3},
-        {"key": "supplier",     "label": "Supplier",        "flex": 2},
-        {"key": "quantity",     "label": "Qty",             "flex": 1, "align": "right"},
-        {"key": "unit_cost_f",  "label": "Unit Cost (SGD)", "flex": 2, "align": "right"},
-        {"key": "total_f",      "label": "Total (SGD)",     "flex": 2, "align": "right"},
-        {"key": "quote_f",      "label": "Quote?",          "flex": 1, "align": "center"},
-    ]
-
-    grand_total = 0.0
-    _items_rows: list[dict] = []
-    for it in items:
-        uc = float(it["unit_cost"])
-        qty = int(it["quantity"])
-        tc = uc * qty
-        grand_total += tc
-        _items_rows.append({
-            "id": it["id"],
-            "item_code": it["item_code"],
-            "item_name": it.get("item_name") or it["item_code"],
-            "supplier": it.get("supplier") or "—",
-            "quantity": qty,
-            "unit_cost_f": f"{uc:,.2f}",
-            "total_f": f"{tc:,.2f}",
-            "quote_f": "⚠️ Yes" if it.get("requires_quote") else "No",
-        })
-
     def _item_actions(row: dict) -> None:
         ca, cb = st.columns(2)
         with ca:
@@ -665,10 +668,46 @@ with tab_items:
                 st.session_state["sh_confirm_del_item"] = row["id"]
                 st.rerun()
 
+    # ── Section 1: Items for Sale ─────────────────────────────────────────
+    st.markdown("### 🛍️ Items for Sale")
+    st.caption(
+        "Products you will actually sell to customers (e.g. T-shirts, mugs). "
+        "The cost of each item is used to calculate the profit of each "
+        "selling option."
+    )
+
+    _items_cols = [
+        {"key": "item_code",    "label": "Code",            "flex": 1, "mono": True},
+        {"key": "item_name",    "label": "Name",            "flex": 3},
+        {"key": "supplier",     "label": "Supplier",        "flex": 2},
+        {"key": "quantity",     "label": "Qty",             "flex": 1, "align": "right"},
+        {"key": "unit_cost_f",  "label": "Unit Cost (SGD)", "flex": 2, "align": "right"},
+        {"key": "total_f",      "label": "Total (SGD)",     "flex": 2, "align": "right"},
+        {"key": "quote_f",      "label": "Quote?",          "flex": 1, "align": "center"},
+    ]
+
+    sale_total = 0.0
+    _items_rows: list[dict] = []
+    for it in sale_items:
+        uc = float(it["unit_cost"])
+        qty = int(it["quantity"])
+        tc = uc * qty
+        sale_total += tc
+        _items_rows.append({
+            "id": it["id"],
+            "item_code": it["item_code"],
+            "item_name": it.get("item_name") or it["item_code"],
+            "supplier": it.get("supplier") or "—",
+            "quantity": qty,
+            "unit_cost_f": f"{uc:,.2f}",
+            "total_f": f"{tc:,.2f}",
+            "quote_f": "⚠️ Yes" if it.get("requires_quote") else "No",
+        })
+
     corporate_table(
         _items_cols,
         _items_rows,
-        empty_text="No items registered yet.",
+        empty_text="No items for sale registered yet.",
         row_actions_fn=_item_actions if can_edit_proposal else None,
     )
 
@@ -676,35 +715,13 @@ with tab_items:
         st.markdown(
             f"<div style='text-align:right;font-weight:600;color:#0f172a;"
             f"padding:0.5rem 0;border-top:2px solid #e2e8f0;margin-top:0.25rem;'>"
-            f"Total Cost of All Items: SGD {grand_total:,.2f}</div>",
+            f"Subtotal — Items for Sale: SGD {sale_total:,.2f}</div>",
             unsafe_allow_html=True,
         )
 
-    # ── Delete confirmation ────────────────────────────────────────────────
-    _del_item_id = st.session_state.get("sh_confirm_del_item")
-    if _del_item_id:
-        _del_it = next((it for it in items if it["id"] == _del_item_id), None)
-        if _del_it:
-            _del_name = _del_it.get("item_name") or _del_it["item_code"]
-            with st.container(border=True):
-                st.warning(f"Delete **{_del_name}**? This cannot be undone.")
-                ca, cb = st.columns(2)
-                with ca:
-                    if st.button("Yes, delete", key=f"confirm_del_item_{_del_item_id}",
-                                 type="primary"):
-                        delete_item(_del_item_id)
-                        st.session_state.pop("sh_confirm_del_item", None)
-                        st.session_state.pop("sh_edit_item_id", None)
-                        st.rerun()
-                with cb:
-                    if st.button("Cancel", key=f"cancel_del_item_{_del_item_id}"):
-                        st.session_state.pop("sh_confirm_del_item", None)
-                        st.rerun()
-
     if can_edit_proposal:
-        st.markdown("---")
         if st.button(
-            "➕ Add Item", key="toggle_add_item",
+            "➕ Add Item for Sale", key="toggle_add_item",
             type="secondary" if st.session_state.get("sh_adding_item") else "primary",
         ):
             st.session_state["sh_adding_item"] = not st.session_state.get("sh_adding_item", False)
@@ -712,7 +729,7 @@ with tab_items:
 
         if st.session_state.get("sh_adding_item"):
             with st.container(border=True):
-                st.markdown("**New Item**")
+                st.markdown("**New Item for Sale**")
                 ai1, ai2, ai3, ai4 = st.columns([3, 2, 2, 2])
                 with ai1:
                     new_name = st.text_input("Item name *", key="add_item_name",
@@ -749,6 +766,7 @@ with tab_items:
                                     supplier=new_supp.strip() or None,
                                     quantity=int(new_qty),
                                     unit_cost=float(new_cost),
+                                    item_kind="sale",
                                 )
                                 _reset_and_scroll(
                                     ["add_item_name", "add_item_supplier",
@@ -762,13 +780,162 @@ with tab_items:
                         st.session_state.pop("sh_adding_item", None)
                         st.rerun()
 
+    # ── Section 2: Other Costs ────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 💸 Other Costs")
+    st.caption(
+        "Expenses that are **not** sold as products — for example, delivery, "
+        "design, printing, packaging, or service fees. These are not linked "
+        "to selling options but are subtracted from your profit. "
+        "**Final profit = revenue from sales − cost of items sold − other costs.**"
+    )
+
+    _other_cols = [
+        {"key": "item_code",    "label": "Code",            "flex": 1, "mono": True},
+        {"key": "item_name",    "label": "Description",     "flex": 4},
+        {"key": "quantity",     "label": "Qty",             "flex": 1, "align": "right"},
+        {"key": "unit_cost_f",  "label": "Unit Cost (SGD)", "flex": 2, "align": "right"},
+        {"key": "total_f",      "label": "Total (SGD)",     "flex": 2, "align": "right"},
+    ]
+
+    other_total = 0.0
+    _other_rows: list[dict] = []
+    for it in other_items:
+        uc = float(it["unit_cost"])
+        qty = int(it["quantity"])
+        tc = uc * qty
+        other_total += tc
+        _other_rows.append({
+            "id": it["id"],
+            "item_code": it["item_code"],
+            "item_name": it.get("item_name") or it["item_code"],
+            "quantity": qty,
+            "unit_cost_f": f"{uc:,.2f}",
+            "total_f": f"{tc:,.2f}",
+        })
+
+    corporate_table(
+        _other_cols,
+        _other_rows,
+        empty_text="No other costs registered yet.",
+        row_actions_fn=_item_actions if can_edit_proposal else None,
+    )
+
+    if _other_rows:
+        st.markdown(
+            f"<div style='text-align:right;font-weight:600;color:#0f172a;"
+            f"padding:0.5rem 0;border-top:2px solid #e2e8f0;margin-top:0.25rem;'>"
+            f"Subtotal — Other Costs: SGD {other_total:,.2f}</div>",
+            unsafe_allow_html=True,
+        )
+
+    if can_edit_proposal:
+        if st.button(
+            "➕ Add Other Cost", key="toggle_add_other",
+            type="secondary" if st.session_state.get("sh_adding_other") else "primary",
+        ):
+            st.session_state["sh_adding_other"] = not st.session_state.get("sh_adding_other", False)
+            st.rerun()
+
+        if st.session_state.get("sh_adding_other"):
+            with st.container(border=True):
+                st.markdown("**New Other Cost**")
+                st.caption(
+                    "Use this for anything you pay for that is not sold to "
+                    "customers, such as delivery, printing or design."
+                )
+                oa1, oa2, oa3 = st.columns([4, 2, 2])
+                with oa1:
+                    new_o_name = st.text_input(
+                        "Description *", key="add_other_name",
+                        placeholder="e.g. Delivery fee, Printing, Graphic design",
+                    )
+                with oa2:
+                    new_o_qty = st.number_input(
+                        "Quantity *", min_value=1, value=1, key="add_other_qty",
+                    )
+                with oa3:
+                    new_o_cost = st.number_input(
+                        "Unit Cost (SGD) *", min_value=0.0, value=0.0,
+                        format="%.2f", key="add_other_cost",
+                    )
+
+                calc_o = new_o_cost * new_o_qty
+                if calc_o > 0:
+                    st.info(f"Total Cost: **SGD {calc_o:.2f}**")
+
+                oc1, oc2 = st.columns(2)
+                with oc1:
+                    if st.button("✅ Confirm Add", type="primary",
+                                 key="confirm_add_other"):
+                        if not new_o_name.strip():
+                            st.error("Description is required.")
+                        elif new_o_cost < 0:
+                            st.error("Unit cost cannot be negative.")
+                        else:
+                            code = _next_code(items)
+                            try:
+                                upsert_item(
+                                    fr_id, code,
+                                    item_name=new_o_name.strip(),
+                                    supplier=None,
+                                    quantity=int(new_o_qty),
+                                    unit_cost=float(new_o_cost),
+                                    item_kind="other_cost",
+                                )
+                                _reset_and_scroll(
+                                    ["add_other_name", "add_other_qty",
+                                     "add_other_cost", "sh_adding_other"],
+                                    f"Other cost '{new_o_name.strip()}' added.",
+                                )
+                            except Exception as ex:
+                                st.error(f"Could not add other cost: {ex}")
+                with oc2:
+                    if st.button("Cancel", key="cancel_add_other"):
+                        st.session_state.pop("sh_adding_other", None)
+                        st.rerun()
+
+    # ── Delete confirmation (shared across both sections) ─────────────────
+    _del_item_id = st.session_state.get("sh_confirm_del_item")
+    if _del_item_id:
+        _del_it = next((it for it in items if it["id"] == _del_item_id), None)
+        if _del_it:
+            _del_name = _del_it.get("item_name") or _del_it["item_code"]
+            with st.container(border=True):
+                st.warning(f"Delete **{_del_name}**? This cannot be undone.")
+                ca, cb = st.columns(2)
+                with ca:
+                    if st.button("Yes, delete", key=f"confirm_del_item_{_del_item_id}",
+                                 type="primary"):
+                        delete_item(_del_item_id)
+                        st.session_state.pop("sh_confirm_del_item", None)
+                        st.session_state.pop("sh_edit_item_id", None)
+                        st.rerun()
+                with cb:
+                    if st.button("Cancel", key=f"cancel_del_item_{_del_item_id}"):
+                        st.session_state.pop("sh_confirm_del_item", None)
+                        st.rerun()
+
+    # ── Grand total across both sections ──────────────────────────────────
+    if _items_rows or _other_rows:
+        grand_total = sale_total + other_total
+        st.markdown(
+            f"<div style='text-align:right;font-weight:700;color:#0f172a;"
+            f"padding:0.75rem 0;border-top:2px solid #0f172a;margin-top:0.75rem;"
+            f"font-size:1.05rem;'>"
+            f"Total Committee Expenses: SGD {grand_total:,.2f}</div>",
+            unsafe_allow_html=True,
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — SELLING OPTIONS  (also houses Submit-to-RF per spec G)
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_selling:
-    items_for_selling = list_items(fr_id)
+    # Only sale items can appear in selling options — other costs
+    # (delivery, printing, etc.) are not products.
+    items_for_selling = list_items(fr_id, kind="sale")
     item_map = {it["item_code"]: it for it in items_for_selling}
     item_display = {
         it["item_code"]: (it.get("item_name") or it["item_code"])
@@ -932,12 +1099,22 @@ with tab_selling:
         st.markdown("---")
         st.markdown("#### Summary")
         items_for_summary = list_items(fr_id)
-        total_cost_s = sum(
-            float(it["unit_cost"]) * int(it["quantity"]) for it in items_for_summary
+        items_cost_s = sum(
+            float(it["unit_cost"]) * int(it["quantity"])
+            for it in items_for_summary
+            if it.get("item_kind", "sale") == "sale"
         )
+        other_cost_s = sum(
+            float(it["unit_cost"]) * int(it["quantity"])
+            for it in items_for_summary
+            if it.get("item_kind") == "other_cost"
+        )
+        total_cost_s = items_cost_s + other_cost_s
         st.markdown(
             f"<div style='display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:0.5rem;'>"
-            f"<div><b>Total Cost (items purchased)</b><br>SGD {total_cost_s:,.2f}</div>"
+            f"<div><b>Cost of Items for Sale</b><br>SGD {items_cost_s:,.2f}</div>"
+            f"<div><b>Other Costs</b><br>SGD {other_cost_s:,.2f}</div>"
+            f"<div><b>Total Committee Expenses</b><br>SGD {total_cost_s:,.2f}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -1524,7 +1701,14 @@ if tab_stock:
             st.markdown("#### Financial Summary")
             summary = compute_financial_summary(fr_id)
             c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Total Cost", f"SGD {float(summary.total_cost):.2f}")
+            c1.metric(
+                "Total Cost",
+                f"SGD {float(summary.total_cost):.2f}",
+                help=(
+                    f"Items for sale: SGD {float(summary.items_cost):.2f}  ·  "
+                    f"Other costs: SGD {float(summary.other_costs):.2f}"
+                ),
+            )
             c2.metric("Gross Revenue (before GST)",
                       f"SGD {float(summary.gross_revenue_before_gst):.2f}")
             c3.metric("GST Collected", f"SGD {float(summary.gst_collected):.2f}")
@@ -1533,6 +1717,8 @@ if tab_stock:
             c5.metric("Gross Profit / Net Available",
                       f"SGD {float(summary.gross_profit):.2f}")
             st.caption(
+                f"Total Cost = Items for Sale (SGD {float(summary.items_cost):.2f}) "
+                f"+ Other Costs (SGD {float(summary.other_costs):.2f}). "
                 "Gross Revenue (before GST) is the Committee's actual earnings. "
                 "GST Collected is tax remitted to the government — it is NOT profit."
             )
@@ -1550,6 +1736,8 @@ if tab_report:
         gst_a = float(summary_rc.gst_collected)
         tcp = float(summary_rc.total_customer_payment)
         tc = float(summary_rc.total_cost)
+        ic = float(summary_rc.items_cost)
+        oc = float(summary_rc.other_costs)
         gp = float(summary_rc.gross_profit)
 
         st.markdown(
@@ -1576,11 +1764,21 @@ if tab_report:
             f"<div style='font-size:1.4rem;font-weight:700;color:#0f172a;'>"
             f"SGD {tcp:.2f}</div></div>"
             f"<div><div style='font-size:0.75rem;color:#64748b;text-transform:uppercase;"
-            f"letter-spacing:.04em;'>Total Cost (items)</div>"
+            f"letter-spacing:.04em;'>Cost of Items for Sale</div>"
+            f"<div style='font-size:1.4rem;font-weight:700;color:#0f172a;'>"
+            f"SGD {ic:.2f}</div></div>"
+            f"<div><div style='font-size:0.75rem;color:#64748b;text-transform:uppercase;"
+            f"letter-spacing:.04em;'>Other Costs</div>"
+            f"<div style='font-size:1.4rem;font-weight:700;color:#0f172a;'>"
+            f"SGD {oc:.2f}</div></div>"
+            f"<div><div style='font-size:0.75rem;color:#64748b;text-transform:uppercase;"
+            f"letter-spacing:.04em;'>Total Committee Expenses</div>"
             f"<div style='font-size:1.4rem;font-weight:700;color:#0f172a;'>"
             f"SGD {tc:.2f}</div></div>"
-            f"<div><div style='font-size:0.75rem;color:#64748b;text-transform:uppercase;"
-            f"letter-spacing:.04em;'>Gross Profit / Net Amount Available</div>"
+            f"<div style='grid-column:span 3;'>"
+            f"<div style='font-size:0.75rem;color:#64748b;text-transform:uppercase;"
+            f"letter-spacing:.04em;'>Gross Profit / Net Amount Available "
+            f"(Revenue − Items − Other Costs)</div>"
             f"<div style='font-size:1.4rem;font-weight:700;color:#10b981;'>"
             f"SGD {gp:.2f}</div></div>"
             f"</div></div>",
@@ -2005,7 +2203,14 @@ def _generate_pdf(fundraiser: dict) -> bytes:
             f"  |  {_fmt_date(fundraiser.get('submitted_at'))}"
         ), ln=True)
 
-    if items_data:
+    sale_data = [
+        it for it in items_data if it.get("item_kind", "sale") == "sale"
+    ]
+    other_data = [
+        it for it in items_data if it.get("item_kind") == "other_cost"
+    ]
+
+    if sale_data:
         _sec("2. Items to Purchase")
         pdf.set_font("Helvetica", "B", 9)
         for col, w in [("Item Name", 60), ("Supplier", 40), ("Qty", 18),
@@ -2014,7 +2219,7 @@ def _generate_pdf(fundraiser: dict) -> bytes:
         pdf.ln()
         pdf.set_font("Helvetica", "", 9)
         grand = 0.0
-        for it in items_data:
+        for it in sale_data:
             nm = (it.get("item_name") or it["item_code"])[:35]
             qty = int(it["quantity"])
             uc = float(it["unit_cost"])
@@ -2027,8 +2232,39 @@ def _generate_pdf(fundraiser: dict) -> bytes:
                 pdf.cell(w, 6, val, border=1)
             pdf.ln()
         pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(146, 6, "Total Cost", border=1)
+        pdf.cell(146, 6, "Subtotal — Items for Sale", border=1)
         pdf.cell(34, 6, f"SGD {grand:.2f}", border=1, ln=True)
+
+    if other_data:
+        _sec("2b. Other Costs (not sold)")
+        pdf.set_font("Helvetica", "", 9)
+        pdf.multi_cell(0, 5, (
+            "Expenses not sold as products (delivery, design, printing, etc.). "
+            "Subtracted from revenue when calculating profit."
+        ))
+        pdf.ln(1)
+        pdf.set_font("Helvetica", "B", 9)
+        for col, w in [("Description", 100), ("Qty", 18),
+                        ("Unit Cost", 28), ("Total Cost", 34)]:
+            pdf.cell(w, 6, col, border=1)
+        pdf.ln()
+        pdf.set_font("Helvetica", "", 9)
+        grand_o = 0.0
+        for it in other_data:
+            nm = (it.get("item_name") or it["item_code"])[:55]
+            qty = int(it["quantity"])
+            uc = float(it["unit_cost"])
+            tc = qty * uc
+            grand_o += tc
+            for val, w in [
+                (nm, 100), (str(qty), 18),
+                (f"SGD {uc:.2f}", 28), (f"SGD {tc:.2f}", 34),
+            ]:
+                pdf.cell(w, 6, val, border=1)
+            pdf.ln()
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(146, 6, "Subtotal — Other Costs", border=1)
+        pdf.cell(34, 6, f"SGD {grand_o:.2f}", border=1, ln=True)
 
     if opts_data:
         _sec("3. Selling Options")
@@ -2051,7 +2287,9 @@ def _generate_pdf(fundraiser: dict) -> bytes:
     if summary:
         _sec("4. Financial Summary")
         for label, val in [
-            ("Total Cost:", f"SGD {float(summary.total_cost):.2f}"),
+            ("Cost of Items for Sale:", f"SGD {float(summary.items_cost):.2f}"),
+            ("Other Costs:", f"SGD {float(summary.other_costs):.2f}"),
+            ("Total Committee Expenses:", f"SGD {float(summary.total_cost):.2f}"),
             ("Gross Revenue (before GST):",
              f"SGD {float(summary.gross_revenue_before_gst):.2f}"),
             ("GST Collected:", f"SGD {float(summary.gst_collected):.2f}"),
