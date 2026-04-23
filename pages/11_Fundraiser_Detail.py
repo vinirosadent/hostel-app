@@ -2262,6 +2262,36 @@ class _PDFLibMissing(Exception):
     pass
 
 
+def _pdf_safe(text: object) -> str:
+    """Make a string safe to render with fpdf2's core Helvetica font.
+
+    Helvetica (the built-in font that avoids shipping a .ttf) only covers
+    latin-1. Anything outside that range — emojis, checkbox glyphs, CJK —
+    raises an error at render time. We replace the symbols we intentionally
+    use with ASCII equivalents and transliterate the rest with a `?` so a
+    user-entered emoji in a fundraiser name doesn't blow up the export.
+    """
+    s = str(text if text is not None else "")
+    substitutions = {
+        "☑": "[x]",
+        "☐": "[ ]",
+        "—": "-",
+        "–": "-",
+        "×": "x",
+        "•": "-",
+        "→": "->",
+        "…": "...",
+        "’": "'",
+        "‘": "'",
+        "“": '"',
+        "”": '"',
+    }
+    for src, dst in substitutions.items():
+        s = s.replace(src, dst)
+    # Drop anything still outside latin-1 (emoji, symbols, CJK).
+    return s.encode("latin-1", "replace").decode("latin-1")
+
+
 def _generate_pdf(fundraiser: dict) -> bytes:
     try:
         from fpdf import FPDF
@@ -2279,6 +2309,27 @@ def _generate_pdf(fundraiser: dict) -> bytes:
 
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Wrap cell / multi_cell so every string going into the PDF is sanitised
+    # for the core Helvetica font. Keeps the rest of the function free of
+    # explicit _pdf_safe() calls and also covers user-entered text like
+    # fundraiser name, item descriptions, suppliers, etc. Works whether the
+    # installed fpdf2 uses the old `txt=` keyword or the new `text=`.
+    _orig_cell = pdf.cell
+    _orig_multi = pdf.multi_cell
+
+    def _sanitise_call(orig, args, kwargs):
+        args = list(args)
+        if len(args) >= 3:
+            args[2] = _pdf_safe(args[2])
+        if "txt" in kwargs:
+            kwargs["txt"] = _pdf_safe(kwargs["txt"])
+        if "text" in kwargs:
+            kwargs["text"] = _pdf_safe(kwargs["text"])
+        return orig(*args, **kwargs)
+
+    pdf.cell = lambda *a, **kw: _sanitise_call(_orig_cell, a, kw)
+    pdf.multi_cell = lambda *a, **kw: _sanitise_call(_orig_multi, a, kw)
 
     def _sec(title: str) -> None:
         pdf.ln(5)
