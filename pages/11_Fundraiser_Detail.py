@@ -308,10 +308,16 @@ if _show_report:   _ti += 1
 # _reset_and_scroll(..., keep_tab="📦 Items") or _rerun_same_tab(label) stores
 # the desired label here; we look up its current index (depends on which
 # optional tabs are shown) and click the matching tab button after load.
+# NOTE: the script is injected via st.components.v1.html because <script> tags
+# inside st.markdown(unsafe_allow_html=True) are sanitized by Streamlit and
+# won't execute. The iframe-based component runs JS for real and we reach the
+# parent document via window.parent to click the actual tab button.
+import streamlit.components.v1 as _components
+
 _keep_tab = st.session_state.pop("sh_detail_active_tab", None)
 if _keep_tab and _keep_tab in _tab_labels:
     _keep_idx = _tab_labels.index(_keep_tab)
-    st.markdown(
+    _components.html(
         f"""
         <script>
           (function() {{
@@ -328,7 +334,7 @@ if _keep_tab and _keep_tab in _tab_labels:
           }})();
         </script>
         """,
-        unsafe_allow_html=True,
+        height=0,
     )
 
 
