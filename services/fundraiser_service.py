@@ -28,11 +28,11 @@ STORAGE_BUCKET = "fundraiser-assets"
 VALID_STATUSES = [
     "draft", "rf_review", "master_review", "approved",
     "executing", "reporting",
-    "dof_confirming", "finance_confirming", "master_confirming",
+    "rf_confirming", "finance_confirming", "master_confirming",
     "closed", "rejected",
 ]
 
-# reporting → dof_confirming  means RF has submitted their checklist closure
+# reporting → rf_confirming  means DOF has submitted their checklist closure
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "draft":              {"rf_review"},
     # RF sends to Master OR Master approves directly OR RF returns to student
@@ -41,8 +41,8 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "approved":           {"executing"},
     "executing":          {"reporting"},
     # RF completes closure checklist → moves to DOF queue
-    "reporting":          {"dof_confirming"},
-    "dof_confirming":     {"finance_confirming"},
+    "reporting":          {"rf_confirming"},
+    "rf_confirming":      {"finance_confirming"},
     "finance_confirming": {"master_confirming"},
     "master_confirming":  {"closed"},
     "closed":             set(),
@@ -56,7 +56,7 @@ STATUS_DISPLAY: dict[str, str] = {
     "approved":           "Approved for Execution",
     "executing":          "In Execution",
     "reporting":          "Reporting in Progress",
-    "dof_confirming":     "Awaiting DOF Confirmation",
+    "rf_confirming":      "Awaiting RF Confirmation",
     "finance_confirming": "Awaiting Finance Confirmation",
     "master_confirming":  "Awaiting Master Confirmation",
     "closed":             "Funds Available / Closed",
@@ -67,7 +67,7 @@ STATUS_DISPLAY: dict[str, str] = {
 _STATUS_RANK: list[str] = [
     "draft", "rejected", "rf_review", "master_review",
     "approved", "executing", "reporting",
-    "dof_confirming", "finance_confirming", "master_confirming", "closed",
+    "rf_confirming", "finance_confirming", "master_confirming", "closed",
 ]
 
 RF_CHECKLIST_ITEMS: dict[str, str] = {
@@ -82,6 +82,57 @@ RF_CHECKLIST_ITEMS: dict[str, str] = {
         "The Committee acknowledges that GST collected from customers is not part of Committee "
         "profit — it is remitted to the government. The amount available to the Committee is the "
         "Gross Revenue before GST minus Total Cost."
+    ),
+}
+
+DOF_CHECKLIST_ITEMS: dict[str, str] = {
+    "reimbursements_paid": (
+        "All approved reimbursements have been paid out to the students "
+        "who advanced money for this fundraiser."
+    ),
+    "suppliers_paid": (
+        "All suppliers listed in the Items table have been paid in full, "
+        "with no outstanding invoices."
+    ),
+    "variances_documented": (
+        "Any difference between expected and actual income or expenses "
+        "has been documented in the Report section, with reasons provided."
+    ),
+    "receipts_archived": (
+        "All purchase receipts and PayNow payment records have been "
+        "uploaded to the Appendix and are legible."
+    ),
+}
+
+FINANCE_CHECKLIST_ITEMS: dict[str, str] = {
+    "revenue_matches_nusync": (
+        "The declared Gross Revenue matches the amount deposited in NUSync "
+        "for this fundraiser. Any discrepancy has been investigated and "
+        "resolved."
+    ),
+    "gst_remitted": (
+        "The 9% GST collected from customers has been accounted for and "
+        "will be remitted to the government through the Finance Office, "
+        "separately from the Committee's profit."
+    ),
+    "ledger_updated": (
+        "The fundraiser entry has been posted to the Hall's financial "
+        "ledger with the correct cost centre and period."
+    ),
+}
+
+MASTER_CHECKLIST_ITEMS: dict[str, str] = {
+    "executed_per_approved": (
+        "The fundraiser was carried out according to the approved "
+        "proposal. Any deviations have been documented and justified."
+    ),
+    "fully_closed": (
+        "The fundraiser is fully closed — no outstanding payments, no "
+        "unreconciled stock, and no pending issues requiring action."
+    ),
+    "funds_release_authorised": (
+        "I authorise the release of the net profit (Gross Revenue − "
+        "Total Cost) to the Committee's account."
     ),
 }
 
@@ -221,6 +272,9 @@ _UPDATABLE_FIELDS = {
     "compliance_gst_artwork", "compliance_regulations",
     # RF closure checklist
     "rf_checklist",
+    "dof_checklist",
+    "finance_checklist",
+    "master_checklist",
 }
 
 
@@ -277,13 +331,14 @@ def transition_status(fundraiser_id: str, new_status: str,
     elif new_status == "approved":
         extra["master_approved_at"] = now
         extra["master_approved_by"] = user_name
-    elif new_status == "dof_confirming":
-        # RF has completed closure checklist
-        extra["rf_confirmed_at"] = now
-        extra["rf_confirmed_by"] = user_name
-    elif new_status == "finance_confirming":
+    elif new_status == "rf_confirming":
+        # DOF has completed closure checklist (first signer)
         extra["dof_confirmed_at"] = now
         extra["dof_confirmed_by"] = user_name
+    elif new_status == "finance_confirming":
+        # RF has completed closure checklist (second signer)
+        extra["rf_confirmed_at"] = now
+        extra["rf_confirmed_by"] = user_name
     elif new_status == "master_confirming":
         extra["finance_confirmed_at"] = now
         extra["finance_confirmed_by"] = user_name
@@ -639,12 +694,154 @@ def list_registered_students(fundraiser_id: str) -> list[dict]:
     ).eq("fundraiser_id", fundraiser_id).execute().data or []
 
 
-# ── RF closure checklist ─────────────────────────────────────────────────────
+# ── Committee members (free-text) ───────────────────────────────────────────
+#
+# Registro documental de membros do comitê do fundraiser em texto livre.
+# NÃO concede login nem permissão — é só uma lista de nomes para a proposta.
+# Quem tem permissão real de editar/submeter continua sendo controlado por
+# fundraiser_students (que exige user_id real).
 
+
+def list_committee_members(fundraiser_id: str) -> list[dict]:
+    """Retorna todos os membros do comitê do fundraiser, em ordem de criação."""
+    sb = get_supabase()
+    return sb.table("fundraiser_committee_members").select(
+        "id, member_name, position, created_at"
+    ).eq("fundraiser_id", fundraiser_id).order("created_at").execute().data or []
+
+
+def add_committee_member(fundraiser_id: str, *,
+                         member_name: str,
+                         position: str,
+                         created_by_id: str | None = None) -> dict:
+    """Adiciona um membro ao comitê. Nome é obrigatório; posição pode ser vazia."""
+    if not member_name or not member_name.strip():
+        raise ValidationError("Member name is required.")
+    payload: dict[str, Any] = {
+        "fundraiser_id": fundraiser_id,
+        "member_name": member_name.strip(),
+        "position": (position or "").strip(),
+    }
+    if created_by_id:
+        payload["created_by_id"] = created_by_id
+    sb = get_supabase()
+    res = sb.table("fundraiser_committee_members").insert(payload).execute()
+    return res.data[0] if res.data else {}
+
+
+def delete_committee_member(member_id: str) -> None:
+    """Remove um membro do comitê pelo id da linha."""
+    sb = get_supabase()
+    sb.table("fundraiser_committee_members").delete().eq("id", member_id).execute()
+
+
+def update_committee_member(member_id: str, *,
+                            member_name: str,
+                            position: str) -> dict:
+    """Atualiza nome e/ou posição de um membro existente."""
+    if not member_name or not member_name.strip():
+        raise ValidationError("Member name is required.")
+    payload = {
+        "member_name": member_name.strip(),
+        "position": (position or "").strip(),
+    }
+    sb = get_supabase()
+    res = sb.table("fundraiser_committee_members").update(payload).eq(
+        "id", member_id
+    ).execute()
+    return res.data[0] if res.data else {}
+
+
+# ── Closure checklists (quatro signatários) ─────────────────────────────────
+#
+# Este bloco substitui o antigo par update_rf_checklist / rf_checklist_complete
+# por um mecanismo genérico que serve os 4 signatários: RF, DOF, Finance,
+# Master. Os nomes antigos continuam existindo como wrappers finos no final
+# do bloco, para não quebrar o código que ainda os chama.
+
+_CHECKLIST_DEFS: dict[str, tuple[dict[str, str], str]] = {
+    # signer_key : (items_dict, db_column_name)
+    "rf":      (RF_CHECKLIST_ITEMS,      "rf_checklist"),
+    "dof":     (DOF_CHECKLIST_ITEMS,     "dof_checklist"),
+    "finance": (FINANCE_CHECKLIST_ITEMS, "finance_checklist"),
+    "master":  (MASTER_CHECKLIST_ITEMS,  "master_checklist"),
+}
+
+# Em qual status cada signatário pode editar seu checklist. Fora desse
+# status, as escritas são rejeitadas e a UI deve mostrar read-only.
+_CHECKLIST_EDIT_STATUS: dict[str, str] = {
+    "dof":     "reporting",        # DOF agora é o PRIMEIRO signatário do closure
+    "rf":      "rf_confirming",    # RF é o SEGUNDO (antes era o primeiro)
+    "finance": "finance_confirming",
+    "master":  "master_confirming",
+}
+
+
+def get_checklist_items(signer: str) -> dict[str, str]:
+    """Retorna os textos dos itens de checklist de um signatário."""
+    if signer not in _CHECKLIST_DEFS:
+        raise ValidationError(f"Signatário desconhecido: {signer}")
+    return _CHECKLIST_DEFS[signer][0]
+
+
+def update_checklist(fundraiser_id: str, signer: str,
+                     checklist: dict[str, bool]) -> dict:
+    """Persiste o checklist de um signatário.
+
+    Aplica a regra de locking: um signatário só pode editar seu próprio
+    checklist enquanto o fundraiser estiver no status correspondente.
+    """
+    if signer not in _CHECKLIST_DEFS:
+        raise ValidationError(f"Signatário desconhecido: {signer}")
+    items, column = _CHECKLIST_DEFS[signer]
+    expected_status = _CHECKLIST_EDIT_STATUS[signer]
+
+    fr = get_fundraiser(fundraiser_id)
+    if not fr:
+        raise ValidationError("Fundraiser não encontrado.")
+    if fr["status"] != expected_status:
+        raise ValidationError(
+            f"Checklist de {signer.upper()} está bloqueado: o fundraiser "
+            f"está em status '{STATUS_DISPLAY.get(fr['status'], fr['status'])}', "
+            f"não '{STATUS_DISPLAY.get(expected_status, expected_status)}'."
+        )
+
+    # Só mantém chaves que existem no dict de itens; força booleanos.
+    clean = {k: bool(checklist.get(k, False)) for k in items}
+    return update_fundraiser_fields(fundraiser_id, {column: clean})
+
+
+def checklist_complete(fr: dict, signer: str) -> bool:
+    if signer not in _CHECKLIST_DEFS:
+        return False
+    items, column = _CHECKLIST_DEFS[signer]
+    stored = fr.get(column) or {}
+    return all(stored.get(k, False) for k in items)
+
+
+def validate_for_closure_submission(fr: dict, signer: str) -> list[str]:
+    """Retorna motivos legíveis pelos quais o signatário ainda não pode
+    submeter o passo de closure. Lista vazia = pode prosseguir."""
+    errors: list[str] = []
+    expected_status = _CHECKLIST_EDIT_STATUS.get(signer)
+    if fr.get("status") != expected_status:
+        errors.append(
+            f"Fundraiser precisa estar em status "
+            f"'{STATUS_DISPLAY.get(expected_status, expected_status)}' "
+            f"para {signer.upper()} submeter."
+        )
+    if not checklist_complete(fr, signer):
+        items, column = _CHECKLIST_DEFS[signer]
+        stored = fr.get(column) or {}
+        missing = [items[k] for k in items if not stored.get(k, False)]
+        errors.extend(f"Não marcado: {m}" for m in missing)
+    return errors
+
+
+# Wrappers de compatibilidade — NÃO apagar, código antigo da UI ainda usa.
 def update_rf_checklist(fundraiser_id: str, checklist: dict[str, bool]) -> dict:
-    return update_fundraiser_fields(fundraiser_id, {"rf_checklist": checklist})
+    return update_checklist(fundraiser_id, "rf", checklist)
 
 
 def rf_checklist_complete(fr: dict) -> bool:
-    checklist = fr.get("rf_checklist") or {}
-    return all(checklist.get(k, False) for k in RF_CHECKLIST_ITEMS)
+    return checklist_complete(fr, "rf")

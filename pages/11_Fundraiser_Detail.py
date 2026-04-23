@@ -13,14 +13,11 @@ Tab layout (varies by status):
     7. Stock Movement
   Reporting / closure stages:
     8. Report Confirmations
-  Staff only (any stage):
-    9. Purchaser List
-
 Permission model:
   Student (creator or committee member) — edit while draft/rejected; read-only after.
   RF (in charge)     — edit while rf_review; approve / return.
   Master             — edit / approve at any stage.
-  DOF (rlt_lead)     — confirm at dof_confirming.
+  DOF (rlt_lead)     — confirm at reporting (first signer).
   Finance (rlt_finan)— confirm at finance_confirming.
 """
 from __future__ import annotations
@@ -46,8 +43,16 @@ from services.fundraiser_service import (
     list_stock_movements, upsert_stock_movement,
     compute_stock_reconciliation, compute_financial_summary,
     list_assets, create_asset, update_asset_metadata, delete_asset,
-    list_registered_students, register_student, unregister_student,
+    list_registered_students,
+    list_committee_members, add_committee_member, update_committee_member, delete_committee_member,
     update_rf_checklist, rf_checklist_complete,
+    DOF_CHECKLIST_ITEMS,
+    FINANCE_CHECKLIST_ITEMS,
+    MASTER_CHECKLIST_ITEMS,
+    get_checklist_items,
+    update_checklist,
+    checklist_complete,
+    validate_for_closure_submission,
     get_gst_rate,
 )
 
@@ -117,7 +122,7 @@ is_creator = fr.get("created_by_id") == user["id"]
 is_rf_in_charge = fr.get("rf_in_charge_id") == user["id"]
 _is_rf = has_role("resident_fellow")
 _is_master = is_master()
-_is_dof = has_any_role(["rlt_lead", "master"])
+_is_dof = has_any_role(["student_dof", "master"])
 _is_finance = has_any_role(["rlt_finan", "master"])
 
 # Load committee roster at top level — query is now safe after Phase 1 FK fix
@@ -183,7 +188,7 @@ def _fmt_date(val: object) -> str:
 _STATUS_RANK = [
     "draft", "rejected", "rf_review", "master_review",
     "approved", "executing", "reporting",
-    "dof_confirming", "finance_confirming", "master_confirming", "closed",
+    "rf_confirming", "finance_confirming", "master_confirming", "closed",
 ]
 
 # Timeline stage definitions — labels refined per spec H ("The Master", no ALL-CAPS)
@@ -210,7 +215,7 @@ _APPROVAL_STAGES = [
         "label": "Approved by The Master",
         "rank": 4,
         "statuses": {"approved", "executing", "reporting",
-                      "dof_confirming", "finance_confirming",
+                      "rf_confirming", "finance_confirming",
                       "master_confirming", "closed"},
         "ts": "master_approved_at",
     },
@@ -250,14 +255,11 @@ st.markdown(workflow_progress_bar(_build_progress_stages()), unsafe_allow_html=T
 # ── Dynamic tab construction (spec F) ──────────────────────────────────────
 # Stock Movement: only after Master approval (approved / executing / reporting / closure)
 # Report Confirmations: only during reporting / closure stages
-# Purchaser List: staff only
 
 _show_stock = status not in ("draft", "rejected", "rf_review", "master_review")
 _show_report = status in (
-    "reporting", "dof_confirming", "finance_confirming", "master_confirming", "closed"
+    "reporting", "rf_confirming", "finance_confirming", "master_confirming", "closed"
 )
-_show_purchaser = is_staff()
-
 _tab_labels: list[str] = [
     "📋 Proposal",
     "👥 Committee",
@@ -270,9 +272,6 @@ if _show_stock:
     _tab_labels.append("📊 Stock Movement")
 if _show_report:
     _tab_labels.append("✅ Report Confirmations")
-if _show_purchaser:
-    _tab_labels.append("📋 Purchaser List")
-
 _all_tabs = st.tabs(_tab_labels)
 _ti = 0
 
@@ -287,7 +286,6 @@ tab_stock     = _all_tabs[_ti] if _show_stock    else None
 if _show_stock:    _ti += 1
 tab_report    = _all_tabs[_ti] if _show_report   else None
 if _show_report:   _ti += 1
-tab_purchaser = _all_tabs[_ti] if _show_purchaser else None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -502,50 +500,140 @@ with tab_proposal:
 
 with tab_committee:
     st.markdown("#### Committee Members")
-    # Reuse pre-loaded roster — avoids redundant query
-    students = _students_raw
-    if not students:
-        st.info("No committee members registered yet.")
+    st.caption(
+        "List everyone involved in this fundraiser. Names here are for "
+        "documentation only — they do not grant login or editing access."
+    )
+
+    members = list_committee_members(fr_id)
+
+    if not members:
+        st.info("No committee members added yet.")
     else:
-        for s in students:
-            udata = s.get("users") or {}
-            full_name = udata.get("full_name") or udata.get("username") or s.get("user_id", "?")
-            pos = (s.get("position") or "member").replace("_", " ").title()
-            col_nm, col_pos, col_del = st.columns([4, 2, 1])
-            with col_nm:
-                st.markdown(f"**{full_name}**")
-            with col_pos:
-                st.caption(pos)
-            with col_del:
-                if can_edit_proposal and st.button(
-                    "Remove", key=f"rm_student_{s['user_id']}"
-                ):
-                    unregister_student(fr_id, s["user_id"])
-                    st.rerun()
+        for m in members:
+            edit_key = f"edit_cm_{m['id']}"
+            is_editing = st.session_state.get(edit_key, False)
+
+            if is_editing and can_edit_proposal:
+                # ── Modo edição: duas text_inputs + Save / Cancel ─────────
+                col_nm, col_pos, col_actions = st.columns([4, 3, 2])
+                with col_nm:
+                    edit_name = st.text_input(
+                        "Name",
+                        value=m["member_name"],
+                        key=f"edit_name_{m['id']}",
+                        label_visibility="collapsed",
+                    )
+                with col_pos:
+                    edit_pos = st.text_input(
+                        "Position",
+                        value=m.get("position") or "",
+                        key=f"edit_pos_{m['id']}",
+                        label_visibility="collapsed",
+                    )
+                with col_actions:
+                    c_save, c_cancel = st.columns(2)
+                    with c_save:
+                        if st.button(
+                            "Save",
+                            key=f"save_cm_{m['id']}",
+                            type="primary",
+                            use_container_width=True,
+                            disabled=not (edit_name or "").strip(),
+                        ):
+                            try:
+                                update_committee_member(
+                                    m["id"],
+                                    member_name=edit_name,
+                                    position=edit_pos,
+                                )
+                                st.session_state.pop(edit_key, None)
+                                st.session_state.pop(f"edit_name_{m['id']}", None)
+                                st.session_state.pop(f"edit_pos_{m['id']}", None)
+                                st.rerun()
+                            except ValidationError as ex:
+                                st.error(str(ex))
+                            except Exception as ex:
+                                st.error(f"Error saving: {ex}")
+                    with c_cancel:
+                        if st.button(
+                            "Cancel",
+                            key=f"cancel_cm_{m['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.pop(edit_key, None)
+                            st.session_state.pop(f"edit_name_{m['id']}", None)
+                            st.session_state.pop(f"edit_pos_{m['id']}", None)
+                            st.rerun()
+            else:
+                # ── Modo leitura: nome / posição / Edit + Remove ──────────
+                col_nm, col_pos, col_edit, col_del = st.columns([4, 3, 1, 1])
+                with col_nm:
+                    st.markdown(f"**{m['member_name']}**")
+                with col_pos:
+                    pos_display = m.get("position") or "—"
+                    st.caption(pos_display)
+                with col_edit:
+                    if can_edit_proposal and st.button(
+                        "Edit",
+                        key=f"btn_edit_cm_{m['id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state[edit_key] = True
+                        st.rerun()
+                with col_del:
+                    if can_edit_proposal and st.button(
+                        "Remove",
+                        key=f"rm_cm_{m['id']}",
+                        use_container_width=True,
+                    ):
+                        try:
+                            delete_committee_member(m["id"])
+                            st.rerun()
+                        except Exception as ex:
+                            st.error(f"Error removing: {ex}")
 
     if can_edit_proposal:
         st.markdown("---")
         st.markdown("#### Add Member")
-        from services.supabase_client import get_supabase as _gsb
-        all_users = _gsb().table("users").select(
-            "id, full_name, username"
-        ).eq("is_active", True).execute().data or []
-        existing_ids = {s["user_id"] for s in students}
-        eligible = [u for u in all_users if u["id"] not in existing_ids]
-        if eligible:
-            user_map = {f"{u['full_name']} ({u['username']})": u["id"] for u in eligible}
-            sel_label = st.selectbox("Select user", list(user_map.keys()), key="add_member_sel")
-            pos_opts = ["chair", "vice_chair", "treasurer", "secretary", "member"]
-            sel_pos = st.selectbox("Position", pos_opts, key="add_member_pos")
-            if st.button("➕ Add to committee", type="primary", key="add_member_btn"):
-                register_student(
-                    fr_id, user_map[sel_label],
-                    position=sel_pos, added_by_id=user["id"]
+
+        # Campos em colunas lado-a-lado para melhor uso do espaço
+        col_name_in, col_pos_in = st.columns([3, 2])
+        with col_name_in:
+            new_name = st.text_input(
+                "Name",
+                key="new_cm_name",
+                placeholder="e.g. Jane Doe",
+            )
+        with col_pos_in:
+            new_pos = st.text_input(
+                "Position",
+                key="new_cm_pos",
+                placeholder="e.g. Chair, Treasurer, Member",
+            )
+
+        if st.button(
+            "➕ Add member",
+            type="primary",
+            key="add_cm_btn",
+            disabled=not (new_name or "").strip(),
+        ):
+            try:
+                add_committee_member(
+                    fr_id,
+                    member_name=new_name,
+                    position=new_pos,
+                    created_by_id=user["id"],
                 )
-                st.success("Member added.")
+                # Clear the text inputs by deleting their session state
+                # keys and rerunning the page.
+                st.session_state.pop("new_cm_name", None)
+                st.session_state.pop("new_cm_pos", None)
                 st.rerun()
-        else:
-            st.caption("All active users are already members.")
+            except ValidationError as ex:
+                st.error(str(ex))
+            except Exception as ex:
+                st.error(f"Error adding member: {ex}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1588,177 +1676,202 @@ if tab_report:
         )
 
         st.markdown("---")
-        can_do_rf = ((_is_rf and is_rf_in_charge) or _is_master) and status == "reporting"
-        current_checklist: dict = fr.get("rf_checklist") or {}
+        st.markdown("#### Closure Confirmation Sequence")
 
-        st.markdown("#### RF Closure Checklist")
-        st.caption("The RF in charge must confirm all items below before submitting closure.")
+        def _render_signer_panel(
+            *,
+            step_number: int,
+            signer_key: str,          # "rf" | "dof" | "finance" | "master"
+            signer_label: str,        # Human label, e.g. "DOF Confirmation"
+            active_status: str,       # status in which THIS signer acts
+            next_status: str,         # status to transition TO on confirm
+            confirm_button_label: str,
+            can_confirm: bool,        # caller decides role check
+            signed_name_field: str,   # column in fr that holds the signer name
+            signed_date_field: str,   # column in fr that holds the signed timestamp
+        ) -> None:
+            """Render one of the 4 closure steps with 3 visual states."""
 
-        groups = {
-            "📊 Financial Checks": [
-                "financial_reviewed", "nusync_only", "no_personal_accts", "gst_acknowledged"
-            ],
-            "📦 Stock & Inventory": ["stock_accounted", "sales_recorded", "unsold_noted"],
-            "📌 Administrative":   ["flyers_removed"],
-        }
-        new_checklist: dict[str, bool] = dict(current_checklist)
+            items = get_checklist_items(signer_key)
+            column_name = (
+                f"{signer_key}_checklist" if signer_key != "rf" else "rf_checklist"
+            )
+            stored: dict = fr.get(column_name) or {}
+            already_signed = bool(fr.get(signed_name_field))
+            is_active_now = (status == active_status)
 
-        for group_label, keys in groups.items():
-            st.markdown(f"**{group_label}**")
-            for k in keys:
-                label_text = RF_CHECKLIST_ITEMS[k]
-                checked = current_checklist.get(k, False)
-                new_val = st.checkbox(
-                    label_text,
-                    value=checked,
-                    key=f"rfcl_{k}",
-                    disabled=not can_do_rf,
-                )
-                new_checklist[k] = new_val
+            # ── Header ──
+            if already_signed:
+                head_icon, head_color = "✅", "#10b981"
+            elif is_active_now and can_confirm:
+                head_icon, head_color = "▶️", "#2563eb"
+            else:
+                head_icon, head_color = "⏳", "#94a3b8"
 
-        if can_do_rf:
-            if st.button("💾 Save Checklist Progress", key="save_rf_checklist"):
-                try:
-                    update_rf_checklist(fr_id, new_checklist)
-                    st.success("Checklist progress saved.")
-                    _reload()
-                    st.rerun()
-                except Exception as ex:
-                    st.error(f"Error: {ex}")
-
-        rf_confirmed = bool(fr.get("rf_confirmed_by"))
-        if rf_confirmed:
             st.markdown(
-                f"<div class='sh-sig-block'>"
-                f"<div><div class='sh-sig-label'>RF Closure Confirmed by</div>"
-                f"<div class='sh-sig-name'>{fr.get('rf_confirmed_by', '')}</div></div>"
-                f"<div class='sh-sig-date'>{_fmt_date(fr.get('rf_confirmed_at'))}</div>"
-                f"</div>",
+                f"<div style='margin:1rem 0 0.3rem 0;font-weight:600;color:{head_color};'>"
+                f"{head_icon} Step {step_number} — {signer_label}</div>",
                 unsafe_allow_html=True,
             )
 
-        st.markdown("---")
-        st.markdown("#### Closure Confirmation Sequence")
-
-        def _closure_sig_row(label: str, name_field: str, date_field: str,
-                              is_pending: bool, can_confirm: bool,
-                              confirm_key: str, confirm_new_status: str,
-                              confirm_label: str) -> None:
-            done = bool(fr.get(name_field))
-            if done:
-                st.markdown(
-                    f"<div class='sh-sig-block sh-sig-done'>"
-                    f"<div><div class='sh-sig-label'>✅ {label}</div>"
-                    f"<div class='sh-sig-name'>{fr.get(name_field, '')}</div></div>"
-                    f"<div class='sh-sig-date'>{_fmt_date(fr.get(date_field))}</div>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-            elif is_pending and can_confirm:
-                with st.container(border=True):
-                    st.markdown(f"**{label}**")
-                    st.caption("Your confirmation is required to proceed to the next stage.")
-                    if st.button(f"✅ {confirm_label}", type="primary", key=confirm_key):
-                        st.session_state[f"wf_confirm_{confirm_key}"] = True
-                    if st.session_state.get(f"wf_confirm_{confirm_key}"):
-                        st.warning("Are you sure? This action cannot be undone.")
-                        ca, cb = st.columns(2)
-                        with ca:
-                            if st.button("Yes, confirm", type="primary",
-                                         key=f"wf_yes_{confirm_key}"):
-                                try:
-                                    transition_status(
-                                        fr_id, confirm_new_status, by_user=user
-                                    )
-                                    st.session_state.pop(
-                                        f"wf_confirm_{confirm_key}", None
-                                    )
-                                    st.session_state["sh_action_msg"] = (
-                                        "success", f"{label} confirmed successfully."
-                                    )
-                                    st.rerun()
-                                except Exception as ex:
-                                    st.error(f"Error: {ex}")
-                        with cb:
-                            if st.button("Cancel", key=f"wf_no_{confirm_key}"):
-                                st.session_state.pop(f"wf_confirm_{confirm_key}", None)
-                                st.rerun()
-            else:
-                st.markdown(
-                    f"<div style='padding:0.5rem 1rem;border:1px dashed #e2e8f0;"
-                    f"border-radius:8px;color:#94a3b8;font-size:0.88rem;margin:0.3rem 0;'>"
-                    f"⏳ {label} — pending</div>",
-                    unsafe_allow_html=True,
-                )
-
-        rf_can_submit = can_do_rf and rf_checklist_complete(fr)
-        if can_do_rf and not rf_checklist_complete(fr):
-            st.warning("Complete all RF checklist items above before submitting RF closure.")
-
-        if status == "reporting":
+            # ── Body ──
             with st.container(border=True):
-                st.markdown("**1. RF Closure Submission**")
-                if rf_can_submit:
-                    if st.button("✅ Submit RF Closure", type="primary",
-                                 key="submit_rf_closure"):
-                        st.session_state["wf_confirm_rf_closure"] = True
-                    if st.session_state.get("wf_confirm_rf_closure"):
+                # Checklist (editable only during active stage AND if caller can act)
+                editable = is_active_now and can_confirm and not already_signed
+                new_values: dict[str, bool] = dict(stored)
+                for key, label_text in items.items():
+                    checked = stored.get(key, False)
+                    val = st.checkbox(
+                        label_text,
+                        value=checked,
+                        key=f"chk_{signer_key}_{key}",
+                        disabled=not editable,
+                    )
+                    new_values[key] = val
+
+                # Signed summary (if done)
+                if already_signed:
+                    st.markdown(
+                        f"<div class='sh-sig-block sh-sig-done'>"
+                        f"<div><div class='sh-sig-label'>Signed by</div>"
+                        f"<div class='sh-sig-name'>{fr.get(signed_name_field, '')}</div></div>"
+                        f"<div class='sh-sig-date'>{_fmt_date(fr.get(signed_date_field))}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                # Action buttons (only when active + allowed)
+                if editable:
+                    col_a, col_b = st.columns([1, 1])
+                    with col_a:
+                        if st.button(
+                            "💾 Save progress",
+                            key=f"save_{signer_key}_chk",
+                            use_container_width=True,
+                        ):
+                            try:
+                                update_checklist(fr_id, signer_key, new_values)
+                                st.success("Checklist saved.")
+                                _reload()
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Error: {ex}")
+                    with col_b:
+                        complete = all(new_values.get(k, False) for k in items)
+                        confirm_key = f"submit_{signer_key}_closure"
+
+                        if st.button(
+                            f"✅ {confirm_button_label}",
+                            key=confirm_key,
+                            type="primary",
+                            disabled=not complete,
+                            use_container_width=True,
+                            help=(
+                                None if complete
+                                else "Tick all checklist items above to enable submission."
+                            ),
+                        ):
+                            st.session_state[f"wf_{confirm_key}"] = True
+
+                    if st.session_state.get(f"wf_{confirm_key}"):
                         st.warning(
-                            "Submit RF closure? This will lock the checklist and notify DOF."
+                            "Are you sure? This action cannot be undone, "
+                            "and the checklist will be locked."
                         )
-                        ca, cb = st.columns(2)
-                        with ca:
-                            if st.button("Yes, submit closure", type="primary",
-                                         key="wf_yes_rf_closure"):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button(
+                                "Yes, confirm and submit",
+                                type="primary",
+                                key=f"wf_yes_{confirm_key}",
+                            ):
                                 try:
-                                    update_rf_checklist(fr_id, new_checklist)
-                                    transition_status(fr_id, "dof_confirming", by_user=user)
-                                    st.session_state.pop("wf_confirm_rf_closure", None)
-                                    st.session_state["sh_action_msg"] = (
-                                        "success",
-                                        "RF closure submitted. Awaiting DOF confirmation.",
+                                    # Persist latest checkbox state first
+                                    # (in case user didn't press Save) then transition.
+                                    update_checklist(fr_id, signer_key, new_values)
+                                    errs = validate_for_closure_submission(
+                                        get_fundraiser(fr_id), signer_key
                                     )
-                                    st.rerun()
+                                    if errs:
+                                        st.error(
+                                            "Cannot submit:\n- "
+                                            + "\n- ".join(errs)
+                                        )
+                                    else:
+                                        transition_status(
+                                            fr_id, next_status, by_user=user
+                                        )
+                                        st.session_state.pop(
+                                            f"wf_{confirm_key}", None
+                                        )
+                                        st.session_state["sh_action_msg"] = (
+                                            "success",
+                                            f"{signer_label} submitted.",
+                                        )
+                                        st.rerun()
                                 except Exception as ex:
                                     st.error(f"Error: {ex}")
-                        with cb:
-                            if st.button("Cancel", key="wf_no_rf_closure"):
-                                st.session_state.pop("wf_confirm_rf_closure", None)
+                        with c2:
+                            if st.button("Cancel", key=f"wf_no_{confirm_key}"):
+                                st.session_state.pop(f"wf_{confirm_key}", None)
                                 st.rerun()
-                else:
-                    st.caption("Complete all RF checklist items to enable submission.")
 
-        _closure_sig_row(
-            label="2. DOF Confirmation",
-            name_field="dof_confirmed_by",
-            date_field="dof_confirmed_at",
-            is_pending=status == "dof_confirming",
-            can_confirm=_is_dof,
-            confirm_key="dof_confirm",
-            confirm_new_status="finance_confirming",
-            confirm_label="DOF Confirm",
+                # Locked notice (not active, not yet signed)
+                elif not already_signed:
+                    st.caption(
+                        "This step is not yet active. The previous signer must "
+                        "complete their confirmation first."
+                    )
+
+
+        # ── Render the four steps ───────────────────────────────────────────
+
+        _render_signer_panel(
+            step_number=1,
+            signer_key="dof",
+            signer_label="DOF Closure Submission",
+            active_status="reporting",
+            next_status="rf_confirming",
+            confirm_button_label="Submit DOF Closure",
+            can_confirm=_is_dof or _is_master,
+            signed_name_field="dof_confirmed_by",
+            signed_date_field="dof_confirmed_at",
         )
 
-        _closure_sig_row(
-            label="3. Finance Confirmation",
-            name_field="finance_confirmed_by",
-            date_field="finance_confirmed_at",
-            is_pending=status == "finance_confirming",
+        _render_signer_panel(
+            step_number=2,
+            signer_key="rf",
+            signer_label="RF Confirmation",
+            active_status="rf_confirming",
+            next_status="finance_confirming",
+            confirm_button_label="RF Confirm",
+            can_confirm=(_is_rf and is_rf_in_charge) or _is_master,
+            signed_name_field="rf_confirmed_by",
+            signed_date_field="rf_confirmed_at",
+        )
+
+        _render_signer_panel(
+            step_number=3,
+            signer_key="finance",
+            signer_label="Finance Confirmation",
+            active_status="finance_confirming",
+            next_status="master_confirming",
+            confirm_button_label="Finance Confirm",
             can_confirm=_is_finance,
-            confirm_key="finance_confirm",
-            confirm_new_status="master_confirming",
-            confirm_label="Finance Confirm",
+            signed_name_field="finance_confirmed_by",
+            signed_date_field="finance_confirmed_at",
         )
 
-        _closure_sig_row(
-            label="4. Master Final Confirmation",
-            name_field="master_closure_by",
-            date_field="master_closure_at",
-            is_pending=status == "master_confirming",
+        _render_signer_panel(
+            step_number=4,
+            signer_key="master",
+            signer_label="Master Final Confirmation",
+            active_status="master_confirming",
+            next_status="closed",
+            confirm_button_label="Master — Confirm & Release Funds",
             can_confirm=_is_master,
-            confirm_key="master_final",
-            confirm_new_status="closed",
-            confirm_label="Master — Confirm & Release Funds",
+            signed_name_field="master_closure_by",
+            signed_date_field="master_closure_at",
         )
 
         if fr.get("funds_available") or status == "closed":
@@ -1775,155 +1888,139 @@ if tab_report:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 9 — PURCHASER LIST  (staff only)
-# ══════════════════════════════════════════════════════════════════════════════
-
-if tab_purchaser:
-    with tab_purchaser:
-        st.markdown("#### Purchaser List")
-        st.caption(
-            "This section holds purchaser records once sales are executed via NUSync. "
-            "Export from NUSync and attach here for record-keeping."
-        )
-        t7_notes = st.text_area(
-            "Notes / reference",
-            value=fr.get("proposal_extra") or "",
-            height=100,
-            disabled=not can_edit_report and not can_edit_proposal,
-            key="t7_notes",
-        )
-        if (can_edit_proposal or can_edit_report) and st.button(
-            "💾 Save Notes", key="t7_save"
-        ):
-            update_fundraiser_fields(fr_id, {"proposal_extra": t7_notes})
-            st.success("Notes saved.")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # WORKFLOW ACTION BAR  (RF / Master actions; student Submit is in Selling Options tab)
 # ══════════════════════════════════════════════════════════════════════════════
 
-st.divider()
-st.subheader("Workflow Actions")
+_show_workflow_bar = (
+    (status == "rf_review" and _is_rf and (is_rf_in_charge or is_staff()))
+    or (status == "master_review" and _is_master)
+    or (status == "rf_review" and _is_master)
+    or (status == "rf_review" and (is_staff() or _is_rf))
+    or (status == "master_review" and _is_master)
+    or (status == "approved" and (is_staff() or is_creator))
+    or (status == "executing" and (is_staff() or is_creator))
+)
 
+if _show_workflow_bar:
+    st.divider()
+    st.subheader("Workflow Actions")
 
-def _confirm_and_transition(
-    key: str, btn_label: str,
-    new_status: str, confirm_q: str, after_msg: str,
-    btn_type: str = "primary",
-    pre_check_fn=None,
-) -> None:
-    if st.button(btn_label, type=btn_type, use_container_width=True,
-                 key=f"wf_btn_{key}"):
-        if pre_check_fn:
-            errors = pre_check_fn()
-            if errors:
-                for e in errors:
-                    st.error(e)
-                return
-        st.session_state[f"wf_confirm_{key}"] = True
+    def _confirm_and_transition(
+        key: str, btn_label: str,
+        new_status: str, confirm_q: str, after_msg: str,
+        btn_type: str = "primary",
+        pre_check_fn=None,
+    ) -> None:
+        if st.button(btn_label, type=btn_type, use_container_width=True,
+                     key=f"wf_btn_{key}"):
+            if pre_check_fn:
+                errors = pre_check_fn()
+                if errors:
+                    for e in errors:
+                        st.error(e)
+                    return
+            st.session_state[f"wf_confirm_{key}"] = True
 
-    if st.session_state.get(f"wf_confirm_{key}"):
-        with st.container(border=True):
-            st.markdown(f"**{confirm_q}**")
-            ca, cb = st.columns(2)
-            with ca:
-                if st.button("Yes, confirm", key=f"wf_yes_{key}",
-                             type="primary", use_container_width=True):
-                    try:
-                        transition_status(fr_id, new_status, by_user=user)
+        if st.session_state.get(f"wf_confirm_{key}"):
+            with st.container(border=True):
+                st.markdown(f"**{confirm_q}**")
+                ca, cb = st.columns(2)
+                with ca:
+                    if st.button("Yes, confirm", key=f"wf_yes_{key}",
+                                 type="primary", use_container_width=True):
+                        try:
+                            transition_status(fr_id, new_status, by_user=user)
+                            st.session_state.pop(f"wf_confirm_{key}", None)
+                            st.session_state["sh_action_msg"] = ("success", after_msg)
+                            st.rerun()
+                        except (InvalidTransition, Exception) as exc:
+                            st.error(str(exc))
+                with cb:
+                    if st.button("Cancel", key=f"wf_no_{key}", use_container_width=True):
                         st.session_state.pop(f"wf_confirm_{key}", None)
-                        st.session_state["sh_action_msg"] = ("success", after_msg)
                         st.rerun()
-                    except (InvalidTransition, Exception) as exc:
-                        st.error(str(exc))
-            with cb:
-                if st.button("Cancel", key=f"wf_no_{key}", use_container_width=True):
-                    st.session_state.pop(f"wf_confirm_{key}", None)
-                    st.rerun()
 
+    action_cols = st.columns(5)
 
-action_cols = st.columns(5)
+    # RF → send to The Master
+    with action_cols[1]:
+        if _is_rf and (is_rf_in_charge or is_staff()) and status == "rf_review":
+            _confirm_and_transition(
+                key="rf_to_master",
+                btn_label="📨 Send to The Master",
+                new_status="master_review",
+                confirm_q="Forward this proposal to the Hall Master for final approval?",
+                after_msg="Proposal forwarded to the Hall Master.",
+            )
 
-# RF → send to The Master
-with action_cols[1]:
-    if _is_rf and (is_rf_in_charge or is_staff()) and status == "rf_review":
-        _confirm_and_transition(
-            key="rf_to_master",
-            btn_label="📨 Send to The Master",
-            new_status="master_review",
-            confirm_q="Forward this proposal to the Hall Master for final approval?",
-            after_msg="Proposal forwarded to the Hall Master.",
-        )
+    # Master → approve from master_review
+    with action_cols[2]:
+        if _is_master and status == "master_review":
+            _confirm_and_transition(
+                key="master_approve",
+                btn_label="✅ Approve",
+                new_status="approved",
+                confirm_q="Approve this fundraiser proposal?",
+                after_msg="Proposal approved and ready for execution.",
+            )
 
-# Master → approve from master_review
-with action_cols[2]:
-    if _is_master and status == "master_review":
-        _confirm_and_transition(
-            key="master_approve",
-            btn_label="✅ Approve",
-            new_status="approved",
-            confirm_q="Approve this fundraiser proposal?",
-            after_msg="Proposal approved and ready for execution.",
-        )
+    # Master → direct approve from rf_review (bypass RF→Master forwarding)
+    with action_cols[2]:
+        if _is_master and status == "rf_review":
+            _confirm_and_transition(
+                key="master_direct_approve",
+                btn_label="✅ Approve Directly",
+                new_status="approved",
+                confirm_q="Approve this proposal directly (bypassing the RF→Master step)?",
+                after_msg="Proposal approved directly by The Master.",
+            )
 
-# Master → direct approve from rf_review (bypass RF→Master forwarding)
-with action_cols[2]:
-    if _is_master and status == "rf_review":
-        _confirm_and_transition(
-            key="master_direct_approve",
-            btn_label="✅ Approve Directly",
-            new_status="approved",
-            confirm_q="Approve this proposal directly (bypassing the RF→Master step)?",
-            after_msg="Proposal approved directly by The Master.",
-        )
+    # RF / Master → return to student
+    with action_cols[3]:
+        if (is_staff() or _is_rf) and status == "rf_review":
+            _confirm_and_transition(
+                key="request_changes",
+                btn_label="↩ Return to Student",
+                new_status="draft",
+                confirm_q="Return this proposal to the student for revisions?",
+                after_msg="Proposal returned to draft. The student can make changes.",
+                btn_type="secondary",
+            )
 
-# RF / Master → return to student
-with action_cols[3]:
-    if (is_staff() or _is_rf) and status == "rf_review":
-        _confirm_and_transition(
-            key="request_changes",
-            btn_label="↩ Return to Student",
-            new_status="draft",
-            confirm_q="Return this proposal to the student for revisions?",
-            after_msg="Proposal returned to draft. The student can make changes.",
-            btn_type="secondary",
-        )
+    # Master → return to RF
+    with action_cols[3]:
+        if _is_master and status == "master_review":
+            _confirm_and_transition(
+                key="delegate_rf",
+                btn_label="↩ Return to RF",
+                new_status="rf_review",
+                confirm_q="Return this proposal to the RF for revisions?",
+                after_msg="Proposal returned to RF.",
+                btn_type="secondary",
+            )
 
-# Master → return to RF
-with action_cols[3]:
-    if _is_master and status == "master_review":
-        _confirm_and_transition(
-            key="delegate_rf",
-            btn_label="↩ Return to RF",
-            new_status="rf_review",
-            confirm_q="Return this proposal to the RF for revisions?",
-            after_msg="Proposal returned to RF.",
-            btn_type="secondary",
-        )
+    # Begin execution
+    with action_cols[4]:
+        if status == "approved" and (is_staff() or is_creator):
+            _confirm_and_transition(
+                key="start_exec",
+                btn_label="▶ Begin Execution",
+                new_status="executing",
+                confirm_q="Mark this fundraiser as in execution? Selling has started.",
+                after_msg="Fundraiser is now in the execution phase.",
+            )
 
-# Begin execution
-with action_cols[4]:
-    if status == "approved" and (is_staff() or is_creator):
-        _confirm_and_transition(
-            key="start_exec",
-            btn_label="▶ Begin Execution",
-            new_status="executing",
-            confirm_q="Mark this fundraiser as in execution? Selling has started.",
-            after_msg="Fundraiser is now in the execution phase.",
-        )
-
-# Move to reporting
-with action_cols[4]:
-    if status == "executing" and (is_staff() or is_creator):
-        _confirm_and_transition(
-            key="move_reporting",
-            btn_label="📊 Move to Reporting",
-            new_status="reporting",
-            confirm_q="Move this fundraiser to the reporting phase? Selling is closed.",
-            after_msg="Fundraiser moved to reporting phase.",
-            btn_type="secondary",
-        )
+    # Move to reporting
+    with action_cols[4]:
+        if status == "executing" and (is_staff() or is_creator):
+            _confirm_and_transition(
+                key="move_reporting",
+                btn_label="📊 Move to Reporting",
+                new_status="reporting",
+                confirm_q="Move this fundraiser to the reporting phase? Selling is closed.",
+                after_msg="Fundraiser moved to reporting phase.",
+                btn_type="secondary",
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

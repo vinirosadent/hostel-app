@@ -38,7 +38,7 @@ def _bucket(status: str) -> str:
         "approved":            "approved",
         "executing":           "executing",
         "reporting":           "reporting",
-        "dof_confirming":      "reporting",
+        "rf_confirming":       "reporting",
         "finance_confirming":  "reporting",
         "master_confirming":   "reporting",
         "closed":              "closed",
@@ -159,7 +159,7 @@ FILTER_OPTIONS = [
     ("soa_review",         "🔶 Under Review of SOA"),   # futuro
     ("executing",          "🟡 In Execution"),
     ("reporting",          "📊 Reporting in Progress"),
-    ("dof_confirming",     "⏳ Awaiting DOF"),
+    ("rf_confirming",      "⏳ Awaiting RF"),
     ("finance_confirming", "⏳ Awaiting Finance"),
     ("master_confirming",  "⏳ Awaiting Master"),
     ("closed",             "✅ Closed / Funds Available"),
@@ -258,9 +258,9 @@ else:
         "executing":          ("🟡 In Execution", buckets["executing"]),
         "reporting":          ("📊 Reporting", [f for f in buckets["reporting"]
                                if f["status"] == "reporting"]),
-        "dof_confirming":     ("⏳ Awaiting DOF",
+        "rf_confirming":      ("⏳ Awaiting RF",
                                [f for f in buckets["reporting"]
-                                if f["status"] == "dof_confirming"]),
+                                if f["status"] == "rf_confirming"]),
         "finance_confirming": ("⏳ Awaiting Finance",
                                [f for f in buckets["reporting"]
                                 if f["status"] == "finance_confirming"]),

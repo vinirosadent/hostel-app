@@ -31,21 +31,15 @@ span[class*="material-symbols"] {
     font-feature-settings: 'liga';
 }
 
-/* ---------- Container width (LIMS style, multiple Streamlit versions) ---------- */
-/* O Streamlit trocou o nome da classe do container principal entre versões.
-   Este bloco cobre todas as variações conhecidas: .main .block-container (antigo),
-   [data-testid="stMainBlockContainer"] (novo), e fallbacks genéricos. */
+/* ---------- Container width (Idêntico à arquitetura do LIMS) ---------- */
 .stMainBlockContainer,
 [data-testid="stMainBlockContainer"],
 section.main > div.block-container,
 .main > .block-container,
 .block-container {
-    max-width: 1400px !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-    padding-top: 1.5rem !important;
-    padding-left: 1rem !important;
-    padding-right: 1rem !important;
+    max-width: 1300px !important;
+    margin: 0 auto !important;
+    padding-top: 2rem !important;
 }
 
 /* ---------- Base text sizes ---------- */
@@ -82,7 +76,6 @@ h4, .stMarkdown h4 {
 }
 
 /* ---------- Cards / containers with border=True ---------- */
-/* LIMS style: rounded 10px, subtle shadow, white background, good padding */
 div[data-testid="stVerticalBlockBorderWrapper"] {
     border: 1px solid #e2e8f0 !important;
     border-radius: 10px !important;
@@ -176,8 +169,16 @@ div[data-testid="stDateInput"] input {
 .status-rejected   { background: #fee2e2; color: #991b1b; }
 
 /* ---------- Hide Streamlit auto-generated sidebar navigation ---------- */
-[data-testid="stSidebarNav"] {
+[data-testid="stSidebarNav"], 
+section[data-testid="stSidebarNav"], 
+div[data-testid="stSidebarNav"] {
     display: none !important;
+    visibility: hidden !important;
+    height: 0px !important;
+    min-height: 0px !important;
+    margin: 0px !important;
+    padding: 0px !important;
+    opacity: 0 !important;
 }
 
 /* ---------- Sidebar nav links (custom) ---------- */
@@ -264,23 +265,9 @@ div[data-testid="stDateInput"] input {
     transition: all 0.2s;
     box-shadow: 0 0 0 0 transparent;
 }
-.sh-pb-stage.completed .sh-pb-dot {
-    background: #10b981;
-    border-color: #10b981;
-    color: #fff;
-    font-size: 1.1rem;
-}
-.sh-pb-stage.current .sh-pb-dot {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: #fff;
-    box-shadow: 0 0 0 5px rgba(37,99,235,0.15);
-}
-.sh-pb-stage.rejected .sh-pb-dot {
-    background: #dc2626;
-    border-color: #dc2626;
-    color: #fff;
-}
+.sh-pb-stage.completed .sh-pb-dot { background: #10b981; border-color: #10b981; color: #fff; font-size: 1.1rem; }
+.sh-pb-stage.current .sh-pb-dot { background: #2563eb; border-color: #2563eb; color: #fff; box-shadow: 0 0 0 5px rgba(37,99,235,0.15); }
+.sh-pb-stage.rejected .sh-pb-dot { background: #dc2626; border-color: #dc2626; color: #fff; }
 .sh-pb-label {
     margin-top: 0.5rem;
     font-size: 0.75rem;
@@ -295,58 +282,8 @@ div[data-testid="stDateInput"] input {
 .sh-pb-stage.completed .sh-pb-label { color: #065f46; }
 .sh-pb-stage.current   .sh-pb-label { color: #1d4ed8; }
 .sh-pb-stage.rejected  .sh-pb-label { color: #991b1b; }
-.sh-pb-date {
-    font-size: 0.7rem;
-    color: #64748b;
-    margin-top: 0.2rem;
-    text-align: center;
-    font-weight: 400;
-}
+.sh-pb-date { font-size: 0.7rem; color: #64748b; margin-top: 0.2rem; text-align: center; font-weight: 400; }
 .sh-pb-stage.completed .sh-pb-date { color: #10b981; font-weight: 600; }
-
-/* ---------- HORIZONTAL PROGRESS STEPPER (legacy — kept for reference) ---------- */
-.sh-stepper {
-    display: flex;
-    align-items: flex-start;
-    gap: 0;
-    margin: 1rem 0 1.5rem 0;
-    padding: 0.5rem 0;
-}
-.sh-step {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-    min-width: 0;
-}
-.sh-step:not(:last-child)::after {
-    content: "";
-    position: absolute;
-    top: 14px;
-    left: 50%;
-    width: 100%;
-    height: 3px;
-    background: #e2e8f0;
-    z-index: 0;
-}
-.sh-step.completed:not(:last-child)::after { background: #10b981; }
-.sh-step-circle {
-    width: 30px; height: 30px; border-radius: 50%;
-    background: #fff; border: 3px solid #e2e8f0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.8rem; font-weight: 600; color: #94a3b8;
-    z-index: 1; position: relative; transition: all 0.2s;
-}
-.sh-step.completed .sh-step-circle { background:#10b981;border-color:#10b981;color:#fff; }
-.sh-step.current   .sh-step-circle { background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 0 0 4px rgba(37,99,235,.15); }
-.sh-step.rejected  .sh-step-circle { background:#dc2626;border-color:#dc2626;color:#fff; }
-.sh-step-label {
-    margin-top: 0.5rem; font-size: 0.78rem; color: #64748b;
-    text-align: center; line-height: 1.25; font-weight: 500; max-width: 110px;
-}
-.sh-step.current   .sh-step-label { color:#0f172a;font-weight:600; }
-.sh-step.completed .sh-step-label { color:#065f46; }
 
 /* ---------- Empty state ---------- */
 .sh-empty {
@@ -358,57 +295,21 @@ div[data-testid="stDateInput"] input {
     color: #64748b;
     margin: 1rem 0;
 }
-.sh-empty-icon {
-    font-size: 2rem;
-    margin-bottom: 0.5rem;
-    opacity: 0.6;
-}
-.sh-empty-title {
-    font-weight: 600;
-    color: #1e293b;
-    margin-bottom: 0.25rem;
-    font-size: 1rem;
-}
-.sh-empty-text {
-    font-size: 0.9rem;
-    max-width: 480px;
-    margin: 0 auto;
-}
+.sh-empty-icon { font-size: 2rem; margin-bottom: 0.5rem; opacity: 0.6; }
+.sh-empty-title { font-weight: 600; color: #1e293b; margin-bottom: 0.25rem; font-size: 1rem; }
+.sh-empty-text { font-size: 0.9rem; max-width: 480px; margin: 0 auto; }
 
 /* ---------- Bucket sections ---------- */
-.sh-bucket-header {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    padding: 0.75rem 0 0.25rem 0;
-    margin-top: 1rem;
-    border-bottom: 1px solid #f1f5f9;
-}
-.sh-bucket-title {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: #334155;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-.sh-bucket-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-}
+.sh-bucket-header { display: flex; align-items: baseline; justify-content: space-between; padding: 0.75rem 0 0.25rem 0; margin-top: 1rem; border-bottom: 1px solid #f1f5f9; }
+.sh-bucket-title { font-size: 0.95rem; font-weight: 600; color: #334155; display: flex; align-items: center; gap: 0.5rem; }
+.sh-bucket-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .sh-bucket-dot.drafts       { background: #f59e0b; }
 .sh-bucket-dot.under_review { background: #3b82f6; }
 .sh-bucket-dot.approved     { background: #10b981; }
 .sh-bucket-dot.executing    { background: #f59e0b; }
 .sh-bucket-dot.reporting    { background: #6366f1; }
 .sh-bucket-dot.closed       { background: #64748b; }
-.sh-bucket-count {
-    color: #64748b;
-    font-size: 0.85rem;
-    font-weight: 500;
-}
+.sh-bucket-count { color: #64748b; font-size: 0.85rem; font-weight: 500; }
 
 /* ---------- KPI cards ---------- */
 .sh-kpi {
@@ -421,19 +322,8 @@ div[data-testid="stDateInput"] input {
 .sh-kpi-accent  { border-left-color: #ea7a1e; }
 .sh-kpi-success { border-left-color: #10b981; }
 .sh-kpi-warning { border-left-color: #f59e0b; }
-.sh-kpi-value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #0f172a;
-    line-height: 1.1;
-}
-.sh-kpi-label {
-    font-size: 0.8rem;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-top: 0.25rem;
-}
+.sh-kpi-value { font-size: 1.75rem; font-weight: 700; color: #0f172a; line-height: 1.1; }
+.sh-kpi-label { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.25rem; }
 
 /* ---------- Buttons — primary blue, subtle secondary ---------- */
 .stButton > button[kind="primary"] {
@@ -441,50 +331,28 @@ div[data-testid="stDateInput"] input {
     border-color: #2563eb !important;
     color: #ffffff !important;
     font-weight: 500 !important;
+    font-size: 1rem !important;
+    padding: 0.5rem 1rem !important;
+    min-height: 42px !important;
 }
-.stButton > button[kind="primary"]:hover {
-    background-color: #1d4ed8 !important;
-    border-color: #1d4ed8 !important;
-}
+.stButton > button[kind="primary"]:hover { background-color: #1d4ed8 !important; border-color: #1d4ed8 !important; }
 .stButton > button[kind="secondary"] {
     border: 1px solid #e2e8f0 !important;
     color: #334155 !important;
     background-color: #ffffff !important;
-}
-.stButton > button[kind="secondary"]:hover {
-    background-color: #f1f5f9 !important;
-    border-color: #cbd5e1 !important;
-}
-
-/* Disabled buttons (for "Coming soon" cards) */
-.stButton > button:disabled {
-    opacity: 0.55 !important;
-    cursor: not-allowed !important;
-}
-
-/* ---------- Tabs — modern underlined ---------- */
-[data-baseweb="tab-list"] {
-    gap: 0.25rem;
-    border-bottom: 1px solid #e2e8f0;
-}
-[data-baseweb="tab"] {
-    padding: 0.5rem 1rem !important;
-    border-radius: 6px 6px 0 0 !important;
     font-weight: 500 !important;
 }
-[aria-selected="true"][data-baseweb="tab"] {
-    color: #2563eb !important;
-    border-bottom: 2px solid #2563eb !important;
-}
+.stButton > button[kind="secondary"]:hover { background-color: #f1f5f9 !important; border-color: #cbd5e1 !important; }
+.stButton > button:disabled { opacity: 0.55 !important; cursor: not-allowed !important; }
+
+/* ---------- Tabs — modern underlined ---------- */
+[data-baseweb="tab-list"] { gap: 0.25rem; border-bottom: 1px solid #e2e8f0; }
+[data-baseweb="tab"] { padding: 0.5rem 1rem !important; border-radius: 6px 6px 0 0 !important; font-weight: 500 !important; }
+[aria-selected="true"][data-baseweb="tab"] { color: #2563eb !important; border-bottom: 2px solid #2563eb !important; }
 
 /* ---------- Expanders cleaner ---------- */
-[data-testid="stExpander"] {
+[data-testid="stExpander"], div[data-testid="stAlert"] {
     border: 1px solid #e2e8f0 !important;
-    border-radius: 8px !important;
-}
-
-/* ---------- Alert containers with tighter radius ---------- */
-div[data-testid="stAlert"] {
     border-radius: 8px !important;
 }
 
@@ -494,146 +362,32 @@ div[data-testid="stAlert"] {
 .status-finance_confirming { background: #fce7f3; color: #831843; }
 .status-master_confirming { background: #fdf4ff; color: #701a75; }
 
-/* ---------- Gallery cards (appendix) ---------- */
-.sh-gallery-title {
-    font-weight: 600;
-    color: #0f172a;
-    font-size: 0.88rem;
-    margin-top: 0.5rem;
-    margin-bottom: 0.15rem;
-    line-height: 1.3;
-}
-.sh-gallery-desc {
-    color: #64748b;
-    font-size: 0.78rem;
-    line-height: 1.4;
-    margin-bottom: 0.3rem;
-}
-.sh-gallery-badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.7rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-}
-.sh-gallery-badge.product   { background: #dbeafe; color: #1e40af; }
-.sh-gallery-badge.marketing { background: #d1fae5; color: #065f46; }
-.sh-gallery-badge.other     { background: #f1f5f9; color: #475569; }
-
 /* ---------- Signature blocks ---------- */
-.sh-sig-block {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.65rem 1.1rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-left: 4px solid #2563eb;
-    border-radius: 8px;
-    margin: 0.4rem 0;
-}
-.sh-sig-block.sh-sig-done {
-    border-left-color: #10b981;
-}
-.sh-sig-label {
-    font-size: 0.7rem;
-    color: #64748b;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.1rem;
-}
-.sh-sig-name {
-    font-size: 1.05rem;
-    font-weight: 600;
-    color: #1e40af;
-    font-style: italic;
-    letter-spacing: 0.01em;
-}
-.sh-sig-date {
-    font-size: 0.85rem;
-    color: #64748b;
-    white-space: nowrap;
-    font-weight: 500;
-}
+.sh-sig-block { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.65rem 1.1rem; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb; border-radius: 8px; margin: 0.4rem 0; }
+.sh-sig-block.sh-sig-done { border-left-color: #10b981; }
+.sh-sig-label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.1rem; }
+.sh-sig-name { font-size: 1.05rem; font-weight: 600; color: #1e40af; font-style: italic; letter-spacing: 0.01em; }
+.sh-sig-date { font-size: 0.85rem; color: #64748b; white-space: nowrap; font-weight: 500; }
 
 /* ── Corporate Table (sh-ctable-*) ─────────────────────────────────────── */
-/* Header cells */
-.sh-ctable-th {
-    background: #f8fafc;
-    font-weight: 600;
-    font-size: 0.82rem;
-    color: #475569;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 7px 14px;
-    border-top: 1px solid #e2e8f0;
-    border-bottom: 2px solid #e2e8f0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-/* Data cells */
-.sh-ctable-td {
-    font-size: 0.92rem;
-    padding: 10px 14px;
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    border-bottom: 1px solid #f1f5f9;
-    word-break: break-word;
-}
-/* Alignment modifiers */
-.sh-ctable-right,
-.sh-ctable-th.sh-ctable-right {
-    text-align: right;
-    justify-content: flex-end;
-    font-variant-numeric: tabular-nums;
-}
-.sh-ctable-center,
-.sh-ctable-th.sh-ctable-center {
-    text-align: center;
-    justify-content: center;
-}
-/* Mono (product codes) */
-.sh-ctable-mono {
-    font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace;
-    font-size: 0.85rem;
-    font-weight: 600;
-}
-/* Separator between header and rows */
-.sh-ctable-sep {
-    height: 0;
-    margin: 0;
-    padding: 0;
-}
-/* Empty state inside table */
-.sh-ctable-empty-row {
-    text-align: center;
-    color: #94a3b8;
-    font-size: 0.92rem;
-    padding: 1.5rem 1rem;
-    border-bottom: 1px solid #f1f5f9;
-    font-style: italic;
-}
-/* Profit colour helpers */
+.sh-ctable-th { background: #f8fafc; font-weight: 600; font-size: 0.82rem; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; padding: 7px 14px; border-top: 1px solid #e2e8f0; border-bottom: 2px solid #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-ctable-td { font-size: 0.92rem; padding: 10px 14px; min-height: 44px; display: flex; align-items: center; border-bottom: 1px solid #f1f5f9; word-break: break-word; }
+.sh-ctable-right, .sh-ctable-th.sh-ctable-right { text-align: right; justify-content: flex-end; font-variant-numeric: tabular-nums; }
+.sh-ctable-center, .sh-ctable-th.sh-ctable-center { text-align: center; justify-content: center; }
+.sh-ctable-mono { font-family: 'JetBrains Mono', 'Fira Code', ui-monospace, 'Courier New', monospace; font-size: 0.85rem; font-weight: 600; }
+.sh-ctable-sep { height: 0; margin: 0; padding: 0; }
+.sh-ctable-empty-row { text-align: center; color: #94a3b8; font-size: 0.92rem; padding: 1.5rem 1rem; border-bottom: 1px solid #f1f5f9; font-style: italic; }
 .sh-profit-ok  { color: #10b981; font-weight: 600; }
 .sh-profit-bad { color: #dc2626; font-weight: 600; }
 
-/* ── Reset do botão primary global (removeu o size pequeno antigo) ── */
-div[data-testid="stButton"] > button[kind="primary"] {
-    font-size: 1rem !important;
-    padding: 0.5rem 1rem !important;
-    min-height: 42px !important;
-    font-weight: 500 !important;
-}
-
-/* Botões secondary nos cards — mais elegantes */
-.stButton > button[kind="secondary"] {
-    font-weight: 500 !important;
-}
+/* Home compact module cards — versão compacta final */
+.sh-home-card { padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; transition: border-color 0.15s ease, box-shadow 0.15s ease; min-height: 75px; }
+.sh-home-card:hover { border-color: #cbd5e1; box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04); }
+.sh-home-card-header { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.2rem; }
+.sh-home-card-icon { font-size: 1.05rem; flex-shrink: 0; line-height: 1.2; }
+.sh-home-card-title { font-weight: 600; color: #0f172a; font-size: 0.88rem; line-height: 1.25; word-wrap: break-word; overflow-wrap: break-word; flex-grow: 1; }
+.sh-home-card-desc { color: #64748b; font-size: 0.75rem; margin: 0; line-height: 1.35; word-wrap: break-word; overflow-wrap: break-word; }
+.sh-home-card-badge-soon { font-size: 0.58rem; color: #94a3b8; background: #f1f5f9; padding: 1px 5px; border-radius: 8px; margin-left: 0.3rem; flex-shrink: 0; line-height: 1.6; }
 
 /* ── LIMS-style bordered containers (cards padronizados) ───────────── */
 div[data-testid="stVerticalBlock"] > div[style*="border"] {
@@ -645,61 +399,40 @@ div[data-testid="stVerticalBlock"] > div[style*="border"] {
 }
 
 /* Fundraiser card internal typography */
-.sh-fcard-title {
-    color: #0f172a;
-    font-size: 1.02rem;
-    font-weight: 600;
-    margin: 0 0 0.35rem 0;
-    line-height: 1.3;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-}
-.sh-fcard-desc {
-    color: #475569;
-    font-size: 0.85rem;
-    line-height: 1.45;
-    margin: 0 0 0.6rem 0;
-    height: 55px;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    word-wrap: break-word;
-}
-.sh-fcard-badge-wrap {
-    margin-bottom: 0.7rem;
-}
+.sh-fcard-title { color: #0f172a; font-size: 1.02rem; font-weight: 600; margin: 0 0 0.35rem 0; line-height: 1.3; word-wrap: break-word; overflow-wrap: break-word; }
+.sh-fcard-desc { color: #475569; font-size: 0.85rem; line-height: 1.45; margin: 0 0 0.6rem 0; height: 55px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; word-wrap: break-word; }
+.sh-fcard-badge-wrap { margin-bottom: 0.7rem; }
 
 /* ═══════════════════════════════════════════════════════════════════
    FIX: Material Symbols leak ("keyboard_double", "arrow_right", etc.)
-   Quando Google Fonts não carrega, o nome do ícone aparece como texto.
-   Esconde esses vazamentos sem quebrar o layout.
    ═══════════════════════════════════════════════════════════════════ */
-
-/* Garante que TODOS os spans de Material Symbols usem a fonte correta */
 span[class*="material-symbols"],
 span.material-symbols-outlined,
 span.material-symbols-rounded,
 span.material-symbols-sharp {
-    font-family: 'Material Symbols Outlined',
-                 'Material Symbols Rounded',
-                 'Material Symbols Sharp',
-                 'Material Icons' !important;
+    font-family: 'Material Symbols Outlined', 'Material Symbols Rounded', 'Material Symbols Sharp', 'Material Icons' !important;
     font-feature-settings: 'liga';
+    font-size: 0 !important; /* Esconde o texto literal */
 }
 
-/* Botão de colapsar sidebar — onde aparece o "keyboard_double".
-   Esconde o texto literal e desenha um chevron "<" via CSS puro,
-   usando fonte do sistema (nunca falha). */
+span[class*="material-symbols"]::before,
+span.material-symbols-outlined::before,
+span.material-symbols-rounded::before {
+    font-size: 1.25rem;
+    font-feature-settings: 'liga';
+    content: ""; /* Fallback genérico */
+}
+
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
+button[data-testid*="SidebarNav"] {
+    overflow: hidden;
+    position: relative;
+}
 [data-testid="stSidebarCollapseButton"] span,
 [data-testid="stSidebarCollapsedControl"] span {
     font-size: 0 !important;
     color: transparent !important;
-}
-[data-testid="stSidebarCollapseButton"],
-[data-testid="stSidebarCollapsedControl"] {
-    position: relative;
-    overflow: hidden;
 }
 [data-testid="stSidebarCollapseButton"]::after,
 [data-testid="stSidebarCollapsedControl"]::after {
@@ -713,50 +446,4 @@ span.material-symbols-sharp {
     left: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
-}
-
-/* Fundraiser grid — CSS Grid nativo, independente de Streamlit columns */
-.fr-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
-    margin-bottom: 0.5rem;
-}
-.fr-grid-card {
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-}
-.fr-card-title {
-    font-weight: 600;
-    color: #0f172a;
-    font-size: 1.02rem;
-    line-height: 1.3;
-    margin-bottom: 0.4rem;
-}
-.fr-card-desc {
-    color: #475569;
-    font-size: 0.85rem;
-    line-height: 1.45;
-    margin-bottom: 0.7rem;
-    height: 58px;
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-}
-.fr-card-badge {
-    align-self: flex-start;
-    margin-bottom: 0;
-}
-
-/* Mobile responsive — colapsa pra 1 coluna em telas < 768px */
-@media (max-width: 768px) {
-    .fr-grid {
-        grid-template-columns: 1fr;
-    }
 }

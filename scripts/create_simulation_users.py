@@ -34,6 +34,7 @@ USERS = [
     ("qiqi",   "Qiqi",       "rlt_lead",        "management", None),
     ("valli",  "Valli",      "rlt_admin",       "management", None),
     ("guest1", "Guest 1",    "student_ad_hoc",  "ad_hoc",     None),
+    ("dof",     "Student DOF", "student_dof",   "management", None),
 ]
 
 
@@ -61,6 +62,11 @@ def default_scopes_for_role(role_code: str) -> list[tuple[str, str]]:
         return [("calendar", "none"), ("fundraiser", "assigned_only"),
                 ("event", "assigned_only"),
                 ("reimbursement", "own_only"),
+                ("sanction_alert", "none"), ("admin", "none")]
+    if role_code == "student_dof":
+        return [("calendar", "none"), ("fundraiser", "all"),
+                ("event", "none"),
+                ("reimbursement", "none"),
                 ("sanction_alert", "none"), ("admin", "none")]
     return []
 
@@ -97,7 +103,7 @@ def create_user(sb, u_tuple: tuple, domain: str, master_id: str | None) -> str:
         "user_category": user_category,
         "assigned_block": assigned_block,
         "is_active": True,
-        "must_change_password": True,
+        "must_change_password": False,
         "created_by": master_id,
     }).execute().data[0]
     user_id = user_row["id"]
